@@ -9,7 +9,7 @@ plugins {
 android {
     namespace = "com.example.guidex"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"  // Use NDK 27 to avoid Windows path issues
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

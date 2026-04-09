@@ -648,10 +648,11 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     if (_nameController.text.isEmpty ||
         _selectedCategory.isEmpty ||
+        _mobileController.text.isEmpty ||
         _cutoff <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please complete all academic details first'),
+          content: Text('Please complete all fields before proceeding'),
         ),
       );
       setState(() => _isLoading = false);
@@ -833,11 +834,10 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           const SizedBox(height: 32),
           _buildTextField("Name", "Enter your full name", _nameController),
           const SizedBox(height: 20),
-          _buildTextField(
-              "Age / Date of Birth", "e.g. 18 or 12/05/2006", _ageController),
+          _buildTextField("Age", "e.g. 18", _ageController),
           const SizedBox(height: 20),
-          _buildTextField("Mobile Number (Optional)", "Enter mobile number",
-              _mobileController,
+          _buildTextField(
+              "Mobile Number", "Enter mobile number", _mobileController,
               isPhone: true),
           const SizedBox(height: 32),
           const Text(
