@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:guidex/app_routes.dart';
 import 'package:guidex/models/college_option.dart';
 import 'package:guidex/models/recommendation_result.dart';
@@ -22,6 +23,17 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
   String _selectedCategory = '';
+
+  // Screen 1 Focus Nodes & Error State
+  final FocusNode _nameFocusNode = FocusNode();
+  final FocusNode _ageFocusNode = FocusNode();
+  final FocusNode _mobileFocusNode = FocusNode();
+  final Map<String, bool> _fieldErrors = {
+    'name': false,
+    'age': false,
+    'mobile': false,
+    'category': false,
+  };
 
   // Screen 2 Controllers
   final TextEditingController _physicsController = TextEditingController();
@@ -233,6 +245,9 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     _physicsController.dispose();
     _chemistryController.dispose();
     _mathsController.dispose();
+    _nameFocusNode.dispose();
+    _ageFocusNode.dispose();
+    _mobileFocusNode.dispose();
     super.dispose();
   }
 
@@ -628,9 +643,118 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     });
   }
 
+  bool _validateStep1() {
+    // Validate Step 1 (1/3): Name, Age, Mobile, Category
+    // Reset all error states
+    final newErrors = {
+      'name': _nameController.text.trim().isEmpty ||
+          _nameController.text.trim().length < 2,
+      'age': _ageController.text.trim().isEmpty ||
+          (int.tryParse(_ageController.text.trim()) ?? 0) < 18 ||
+          (int.tryParse(_ageController.text.trim()) ?? 0) > 100,
+      'mobile': _mobileController.text.trim().isEmpty ||
+          _mobileController.text.trim().length < 10,
+      'category': _selectedCategory.isEmpty,
+    };
+
+    setState(() {
+      _fieldErrors.addAll(newErrors);
+    });
+
+    // Find first empty/invalid field and focus on it
+    if (newErrors['name'] == true) {
+      _nameFocusNode.requestFocus();
+      _showSnackBar('Please enter a valid name (at least 2 characters)');
+      return false;
+    }
+    if (newErrors['age'] == true) {
+      _ageFocusNode.requestFocus();
+      _showSnackBar('Please enter a valid age (18-100)');
+      return false;
+    }
+    if (newErrors['mobile'] == true) {
+      _mobileFocusNode.requestFocus();
+      _showSnackBar('Please enter a valid mobile number (10 digits)');
+      return false;
+    }
+    if (newErrors['category'] == true) {
+      _showSnackBar('Please select a category');
+      return false;
+    }
+
+    // Clear errors if all valid
+    setState(() {
+      _fieldErrors['name'] = false;
+      _fieldErrors['age'] = false;
+      _fieldErrors['mobile'] = false;
+      _fieldErrors['category'] = false;
+    });
+
+    return true;
+  }
+
+  bool _validateStep2() {
+    // Validate Step 2 (2/3): Physics, Chemistry, Math marks
+    if (_physicsController.text.trim().isEmpty) {
+      _showSnackBar('Please enter physics marks');
+      return false;
+    }
+    if (_chemistryController.text.trim().isEmpty) {
+      _showSnackBar('Please enter chemistry marks');
+      return false;
+    }
+    if (_mathsController.text.trim().isEmpty) {
+      _showSnackBar('Please enter mathematics marks');
+      return false;
+    }
+
+    double? physics = double.tryParse(_physicsController.text);
+    double? chemistry = double.tryParse(_chemistryController.text);
+    double? maths = double.tryParse(_mathsController.text);
+
+    if (physics == null || physics < 0 || physics > 100) {
+      _showSnackBar('Physics marks must be between 0 and 100');
+      return false;
+    }
+    if (chemistry == null || chemistry < 0 || chemistry > 100) {
+      _showSnackBar('Chemistry marks must be between 0 and 100');
+      return false;
+    }
+    if (maths == null || maths < 0 || maths > 100) {
+      _showSnackBar('Mathematics marks must be between 0 and 100');
+      return false;
+    }
+    if (_cutoff <= 0) {
+      _showSnackBar('Please ensure marks are valid to calculate cutoff');
+      return false;
+    }
+    return true;
+  }
+
+  bool _validateStep3() {
+    // Validate Step 3 (3/3): Preferred course and district
+    if (_selectedInterest.isEmpty) {
+      _showSnackBar('Please select a preferred course');
+      return false;
+    }
+    if (_selectedDistrict.isEmpty) {
+      _showSnackBar('Please select a district');
+      return false;
+    }
+    return true;
+  }
+
   void _nextPage() async {
     if (_currentStep < 2) {
-      if (_currentStep == 1) {
+      // Validate current step before proceeding
+      if (_currentStep == 0) {
+        if (!_validateStep1()) {
+          return;
+        }
+      } else if (_currentStep == 1) {
+        if (!_validateStep2()) {
+          return;
+        }
         _loadAvailableCoursesForCurrentInputs();
       }
 
@@ -644,20 +768,12 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       return;
     }
 
-    setState(() => _isLoading = true);
-
-    if (_nameController.text.isEmpty ||
-        _selectedCategory.isEmpty ||
-        _mobileController.text.isEmpty ||
-        _cutoff <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please complete all fields before proceeding'),
-        ),
-      );
-      setState(() => _isLoading = false);
+    // Final validation before submission (Step 3)
+    if (!_validateStep3()) {
       return;
     }
+
+    setState(() => _isLoading = true);
 
     if (!mounted) return;
 
@@ -832,13 +948,21 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             style: TextStyle(fontSize: 16, color: Color(0xFF6B7280)),
           ),
           const SizedBox(height: 32),
-          _buildTextField("Name", "Enter your full name", _nameController),
+          _buildTextField("Name", "Enter your full name", _nameController,
+              isName: true,
+              focusNode: _nameFocusNode,
+              hasError: _fieldErrors['name'] ?? false),
           const SizedBox(height: 20),
-          _buildTextField("Age", "e.g. 18", _ageController),
+          _buildTextField("Age", "e.g. 18", _ageController,
+              isAge: true,
+              focusNode: _ageFocusNode,
+              hasError: _fieldErrors['age'] ?? false),
           const SizedBox(height: 20),
           _buildTextField(
               "Mobile Number", "Enter mobile number", _mobileController,
-              isPhone: true),
+              isPhone: true,
+              focusNode: _mobileFocusNode,
+              hasError: _fieldErrors['mobile'] ?? false),
           const SizedBox(height: 32),
           const Text(
             "Select Category",
@@ -1120,16 +1244,22 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
   Widget _buildTextField(
       String label, String hint, TextEditingController controller,
-      {bool isNumber = false, bool isPhone = false}) {
+      {bool isNumber = false,
+      bool isPhone = false,
+      bool isName = false,
+      bool isAge = false,
+      FocusNode? focusNode,
+      bool hasError = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF374151)),
+              color:
+                  hasError ? const Color(0xFFDC2626) : const Color(0xFF374151)),
         ),
         const SizedBox(height: 8),
         Container(
@@ -1145,32 +1275,70 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           ),
           child: TextField(
             controller: controller,
-            keyboardType:
-                isNumber || isPhone ? TextInputType.number : TextInputType.text,
+            focusNode: focusNode,
+            keyboardType: isNumber || isPhone || isAge
+                ? TextInputType.number
+                : TextInputType.text,
+            maxLength: isName ? 50 : (isAge ? 3 : null),
+            inputFormatters: [
+              if (isName) LengthLimitingTextInputFormatter(50),
+              if (isAge) FilteringTextInputFormatter.digitsOnly,
+              if (isAge) LengthLimitingTextInputFormatter(3),
+            ],
             decoration: InputDecoration(
               hintText: hint,
               hintStyle:
                   const TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+              counterText: isName ? null : '',
               contentPadding:
                   const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+                borderSide: BorderSide(
+                  color: hasError
+                      ? const Color(0xFFDC2626)
+                      : Colors.grey.withValues(alpha: 0.1),
+                  width: hasError ? 2 : 1,
+                ),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide:
-                    BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
+                borderSide: BorderSide(
+                  color: hasError
+                      ? const Color(0xFFDC2626)
+                      : Colors.grey.withValues(alpha: 0.1),
+                  width: hasError ? 2 : 1,
+                ),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(
+                  color: hasError
+                      ? const Color(0xFFDC2626)
+                      : const Color(0xFF4F46E5),
+                  width: 1.5,
+                ),
+              ),
+              errorBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
                 borderSide:
-                    const BorderSide(color: Color(0xFF4F46E5), width: 1.5),
+                    const BorderSide(color: Color(0xFFDC2626), width: 2),
               ),
             ),
           ),
         ),
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              'This field is required',
+              style: const TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
       ],
     );
   }
