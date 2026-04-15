@@ -39,6 +39,16 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   final TextEditingController _physicsController = TextEditingController();
   final TextEditingController _chemistryController = TextEditingController();
   final TextEditingController _mathsController = TextEditingController();
+
+  // Screen 2 Focus Nodes & Error State
+  final FocusNode _physicsFocusNode = FocusNode();
+  final FocusNode _chemistryFocusNode = FocusNode();
+  final FocusNode _mathsFocusNode = FocusNode();
+  final Map<String, bool> _step2FieldErrors = {
+    'physics': false,
+    'chemistry': false,
+    'maths': false,
+  };
   double _cutoff = 0.0;
   final List<String> _categories = [
     'OC',
@@ -248,7 +258,79 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     _nameFocusNode.dispose();
     _ageFocusNode.dispose();
     _mobileFocusNode.dispose();
+    _physicsFocusNode.dispose();
+    _chemistryFocusNode.dispose();
+    _mathsFocusNode.dispose();
     super.dispose();
+  }
+
+  void _validateMarksInRealTime() {
+    // Real-time validation for marks (0-100)
+    double? physics = double.tryParse(_physicsController.text.trim());
+    double? chemistry = double.tryParse(_chemistryController.text.trim());
+    double? maths = double.tryParse(_mathsController.text.trim());
+
+    setState(() {
+      _step2FieldErrors['physics'] =
+          _physicsController.text.trim().isNotEmpty &&
+              (physics == null || physics < 0 || physics > 100);
+      _step2FieldErrors['chemistry'] =
+          _chemistryController.text.trim().isNotEmpty &&
+              (chemistry == null || chemistry < 0 || chemistry > 100);
+      _step2FieldErrors['maths'] = _mathsController.text.trim().isNotEmpty &&
+          (maths == null || maths < 0 || maths > 100);
+    });
+
+    // Calculate cutoff if inputs are valid
+    if ((_physicsController.text.trim().isNotEmpty &&
+            !(_step2FieldErrors['physics'] ?? false)) &&
+        (_chemistryController.text.trim().isNotEmpty &&
+            !(_step2FieldErrors['chemistry'] ?? false)) &&
+        (_mathsController.text.trim().isNotEmpty &&
+            !(_step2FieldErrors['maths'] ?? false))) {
+      _calculateCutoff();
+    }
+  }
+
+  // Clear individual field errors as user starts typing (1/3 page)
+  void _clearNameError() {
+    setState(() {
+      _fieldErrors['name'] = false;
+    });
+  }
+
+  void _clearAgeError() {
+    setState(() {
+      _fieldErrors['age'] = false;
+    });
+  }
+
+  void _clearMobileError() {
+    setState(() {
+      _fieldErrors['mobile'] = false;
+    });
+  }
+
+  // Clear individual field errors as user starts typing (2/3 page)
+  void _clearPhysicsError() {
+    setState(() {
+      _step2FieldErrors['physics'] = false;
+    });
+    _validateMarksInRealTime();
+  }
+
+  void _clearChemistryError() {
+    setState(() {
+      _step2FieldErrors['chemistry'] = false;
+    });
+    _validateMarksInRealTime();
+  }
+
+  void _clearMathsError() {
+    setState(() {
+      _step2FieldErrors['maths'] = false;
+    });
+    _validateMarksInRealTime();
   }
 
   void _calculateCutoff() {
@@ -650,7 +732,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       'name': _nameController.text.trim().isEmpty ||
           _nameController.text.trim().length < 2,
       'age': _ageController.text.trim().isEmpty ||
-          (int.tryParse(_ageController.text.trim()) ?? 0) < 18 ||
+          (int.tryParse(_ageController.text.trim()) ?? 0) < 17 ||
           (int.tryParse(_ageController.text.trim()) ?? 0) > 100,
       'mobile': _mobileController.text.trim().isEmpty ||
           _mobileController.text.trim().length < 10,
@@ -669,7 +751,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     }
     if (newErrors['age'] == true) {
       _ageFocusNode.requestFocus();
-      _showSnackBar('Please enter a valid age (18-100)');
+      _showSnackBar('Please enter a valid age (17-100)');
       return false;
     }
     if (newErrors['mobile'] == true) {
@@ -694,40 +776,74 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   }
 
   bool _validateStep2() {
-    // Validate Step 2 (2/3): Physics, Chemistry, Math marks
-    if (_physicsController.text.trim().isEmpty) {
-      _showSnackBar('Please enter physics marks');
+    // Validate Step 2 (2/3): Physics, Chemistry, Math marks (0-100)
+    double? physics = double.tryParse(_physicsController.text.trim());
+    double? chemistry = double.tryParse(_chemistryController.text.trim());
+    double? maths = double.tryParse(_mathsController.text.trim());
+
+    // Reset all error states
+    final newErrors = {
+      'physics': _physicsController.text.trim().isEmpty ||
+          physics == null ||
+          physics < 0 ||
+          physics > 100,
+      'chemistry': _chemistryController.text.trim().isEmpty ||
+          chemistry == null ||
+          chemistry < 0 ||
+          chemistry > 100,
+      'maths': _mathsController.text.trim().isEmpty ||
+          maths == null ||
+          maths < 0 ||
+          maths > 100,
+    };
+
+    setState(() {
+      _step2FieldErrors.addAll(newErrors);
+    });
+
+    // Find first empty/invalid field and focus on it
+    if (newErrors['physics'] == true) {
+      _physicsFocusNode.requestFocus();
+      if (_physicsController.text.trim().isEmpty) {
+        _showSnackBar('Please enter physics marks (0-100)');
+      } else {
+        _showSnackBar('Physics marks must be between 0 and 100');
+      }
       return false;
     }
-    if (_chemistryController.text.trim().isEmpty) {
-      _showSnackBar('Please enter chemistry marks');
+    if (newErrors['chemistry'] == true) {
+      _chemistryFocusNode.requestFocus();
+      if (_chemistryController.text.trim().isEmpty) {
+        _showSnackBar('Please enter chemistry marks (0-100)');
+      } else {
+        _showSnackBar('Chemistry marks must be between 0 and 100');
+      }
       return false;
     }
-    if (_mathsController.text.trim().isEmpty) {
-      _showSnackBar('Please enter mathematics marks');
+    if (newErrors['maths'] == true) {
+      _mathsFocusNode.requestFocus();
+      if (_mathsController.text.trim().isEmpty) {
+        _showSnackBar('Please enter mathematics marks (0-100)');
+      } else {
+        _showSnackBar('Mathematics marks must be between 0 and 100');
+      }
       return false;
     }
 
-    double? physics = double.tryParse(_physicsController.text);
-    double? chemistry = double.tryParse(_chemistryController.text);
-    double? maths = double.tryParse(_mathsController.text);
-
-    if (physics == null || physics < 0 || physics > 100) {
-      _showSnackBar('Physics marks must be between 0 and 100');
-      return false;
-    }
-    if (chemistry == null || chemistry < 0 || chemistry > 100) {
-      _showSnackBar('Chemistry marks must be between 0 and 100');
-      return false;
-    }
-    if (maths == null || maths < 0 || maths > 100) {
-      _showSnackBar('Mathematics marks must be between 0 and 100');
-      return false;
-    }
+    // Calculate cutoff and verify it's valid
+    _calculateCutoff();
     if (_cutoff <= 0) {
-      _showSnackBar('Please ensure marks are valid to calculate cutoff');
+      _showSnackBar('Invalid marks - please check your entries');
       return false;
     }
+
+    // Clear errors if all valid
+    setState(() {
+      _step2FieldErrors['physics'] = false;
+      _step2FieldErrors['chemistry'] = false;
+      _step2FieldErrors['maths'] = false;
+    });
+
     return true;
   }
 
@@ -951,18 +1067,21 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           _buildTextField("Name", "Enter your full name", _nameController,
               isName: true,
               focusNode: _nameFocusNode,
-              hasError: _fieldErrors['name'] ?? false),
+              hasError: _fieldErrors['name'] ?? false,
+              onChanged: _clearNameError),
           const SizedBox(height: 20),
           _buildTextField("Age", "e.g. 18", _ageController,
               isAge: true,
               focusNode: _ageFocusNode,
-              hasError: _fieldErrors['age'] ?? false),
+              hasError: _fieldErrors['age'] ?? false,
+              onChanged: _clearAgeError),
           const SizedBox(height: 20),
           _buildTextField(
               "Mobile Number", "Enter mobile number", _mobileController,
               isPhone: true,
               focusNode: _mobileFocusNode,
-              hasError: _fieldErrors['mobile'] ?? false),
+              hasError: _fieldErrors['mobile'] ?? false,
+              onChanged: _clearMobileError),
           const SizedBox(height: 32),
           const Text(
             "Select Category",
@@ -1040,13 +1159,22 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           ),
           const SizedBox(height: 32),
           _buildTextField("Physics Marks", "Out of 100", _physicsController,
-              isNumber: true),
+              isNumber: true,
+              focusNode: _physicsFocusNode,
+              hasError: _step2FieldErrors['physics'] ?? false,
+              onChanged: _clearPhysicsError),
           const SizedBox(height: 20),
           _buildTextField("Chemistry Marks", "Out of 100", _chemistryController,
-              isNumber: true),
+              isNumber: true,
+              focusNode: _chemistryFocusNode,
+              hasError: _step2FieldErrors['chemistry'] ?? false,
+              onChanged: _clearChemistryError),
           const SizedBox(height: 20),
           _buildTextField("Mathematics Marks", "Out of 100", _mathsController,
-              isNumber: true),
+              isNumber: true,
+              focusNode: _mathsFocusNode,
+              hasError: _step2FieldErrors['maths'] ?? false,
+              onChanged: _clearMathsError),
           const SizedBox(height: 40),
           Container(
             width: double.infinity,
@@ -1249,7 +1377,8 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       bool isName = false,
       bool isAge = false,
       FocusNode? focusNode,
-      bool hasError = false}) {
+      bool hasError = false,
+      VoidCallback? onChanged}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1276,14 +1405,22 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           child: TextField(
             controller: controller,
             focusNode: focusNode,
+            onChanged: (value) {
+              if (onChanged != null) {
+                onChanged();
+              }
+            },
             keyboardType: isNumber || isPhone || isAge
                 ? TextInputType.number
                 : TextInputType.text,
-            maxLength: isName ? 50 : (isAge ? 3 : null),
+            maxLength: isName ? 50 : (isAge ? 3 : (isNumber ? 3 : null)),
             inputFormatters: [
               if (isName) LengthLimitingTextInputFormatter(50),
               if (isAge) FilteringTextInputFormatter.digitsOnly,
               if (isAge) LengthLimitingTextInputFormatter(3),
+              if (isNumber && !isPhone) FilteringTextInputFormatter.digitsOnly,
+              if (isNumber && !isPhone) LengthLimitingTextInputFormatter(3),
+              if (isPhone) FilteringTextInputFormatter.digitsOnly,
             ],
             decoration: InputDecoration(
               hintText: hint,
