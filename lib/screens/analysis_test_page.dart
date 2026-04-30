@@ -469,10 +469,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   }
 
   Future<void> _loadDistricts() async {
-    setState(() {
-      _districtsLoading = true;
-    });
-
     final districts = await _apiService.getDistricts();
     if (!mounted) return;
 
@@ -488,7 +484,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     setState(() {
       _districtOptions = resolved;
-      _districtsLoading = false;
       if (!_districtOptions.contains(_selectedDistrict)) {
         _selectedDistrict = _districtOptions.first;
       }
@@ -535,7 +530,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
         .toList();
 
     setState(() {
-      _collegeOptions = options;
       _selectedPreferredColleges = nextSelected;
       _collegeOptionsLoading = false;
     });
@@ -546,9 +540,9 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     // Load all colleges using category and cutoff from earlier pages
     setState(() => _collegeOptionsLoading = true);
-    
+
     List<CollegeOption> allColleges = [];
-    
+
     // Try to fetch colleges for multiple courses using the category and cutoff
     final commonCourses = [
       'Computer Science Engineering',
@@ -568,9 +562,9 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       'Mining Engineering',
       'Petrochemical Engineering',
     ];
-    
+
     final collegesMap = <String, CollegeOption>{};
-    
+
     for (final course in commonCourses) {
       try {
         final options = await _apiService.getCollegeOptions(
@@ -579,7 +573,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           category: _selectedCategory.isNotEmpty ? _selectedCategory : null,
           cutoff: _cutoff > 0 ? _cutoff : null,
         );
-        
+
         for (final option in options) {
           collegesMap[option.collegeId] = option;
         }
@@ -587,14 +581,14 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
         debugPrint('Error fetching colleges for $course: $e');
       }
     }
-    
+
     allColleges = collegesMap.values.toList();
     allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
-    
+
     setState(() => _collegeOptionsLoading = false);
-    
+
     if (!mounted) return;
-    
+
     if (allColleges.isEmpty) {
       _showSnackBar('No colleges available. Please try again.');
       return;
