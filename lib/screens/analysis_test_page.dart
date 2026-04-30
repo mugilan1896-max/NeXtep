@@ -99,6 +99,9 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   List<String> _courseOptions = [];
   Map<String, String> _courseDisplayToQuery = {};
   bool _coursesLoading = false;
+  List<CollegeOption> _allColleges = [];
+  bool _collegesLoading = false;
+  bool _collegeDropdownOpen = false;
   List<String> _districtOptions = const ['Any'];
   List<CollegeOption> _selectedPreferredColleges = const [];
   static const int _maxPreferredColleges = 5;
@@ -526,263 +529,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     setState(() {
       _selectedPreferredColleges = nextSelected;
-    });
-  }
-
-  Future<void> _openPreferredCollegePicker() async {
-    final selectedIds = _selectedPreferredCollegeIds.toSet();
-
-    // Load all colleges using category and cutoff from earlier pages
-    List<CollegeOption> allColleges = [];
-
-    // Try to fetch colleges for multiple courses using the category and cutoff
-    final commonCourses = [
-      'Computer Science Engineering',
-      'Information Technology',
-      'Mechanical Engineering',
-      'Civil Engineering',
-      'Electrical and Electronics Engineering',
-      'Electronics and Communication Engineering',
-      'Electronics and Instrumentation Engineering',
-      'Biomedical Engineering',
-      'Biotechnology',
-      'Chemical Engineering',
-      'Artificial Intelligence and Data Science',
-      'Automobile Engineering',
-      'Aeronautical Engineering',
-      'Production Engineering',
-      'Mining Engineering',
-      'Petrochemical Engineering',
-    ];
-
-    final collegesMap = <String, CollegeOption>{};
-
-    for (final course in commonCourses) {
-      try {
-        final options = await _apiService.getCollegeOptions(
-          preferredCourse: course,
-          district: null,
-          category: _selectedCategory.isNotEmpty ? _selectedCategory : null,
-          cutoff: _cutoff > 0 ? _cutoff : null,
-        );
-
-        for (final option in options) {
-          collegesMap[option.collegeId] = option;
-        }
-      } catch (e) {
-        debugPrint('Error fetching colleges for $course: $e');
-      }
-    }
-
-    allColleges = collegesMap.values.toList();
-    allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
-
-    if (!mounted) return;
-
-    if (allColleges.isEmpty) {
-      _showSnackBar('No colleges available. Please try again.');
-      return;
-    }
-
-    final selected = await showModalBottomSheet<Set<String>>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final searchController = TextEditingController();
-        String query = '';
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            final filtered = allColleges.where((option) {
-              if (query.trim().isEmpty) {
-                return true;
-              }
-
-              // Case-insensitive search
-              final normalizedQuery = query.toLowerCase();
-              return option.collegeName.toLowerCase().contains(normalizedQuery);
-            }).toList();
-
-            return SafeArea(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  left: 16,
-                  right: 16,
-                  top: 16,
-                  bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                ),
-                child: SizedBox(
-                  height: MediaQuery.of(context).size.height * 0.78,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Choose Colleges (1-426)',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF111827),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Choose up to $_maxPreferredColleges colleges (Total: ${allColleges.length})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: searchController,
-                        decoration: InputDecoration(
-                          hintText: 'Search college by name (case-insensitive)',
-                          prefixIcon: const Icon(Icons.search),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        onChanged: (value) {
-                          setSheetState(() {
-                            query = value;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Results: ${filtered.length} colleges',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Expanded(
-                        child: filtered.isEmpty
-                            ? Center(
-                                child: Text(
-                                  'No colleges found matching "$query"',
-                                  style: TextStyle(
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              )
-                            : ListView.builder(
-                                itemCount: filtered.length,
-                                itemBuilder: (context, index) {
-                                  final option = filtered[index];
-                                  final isSelected =
-                                      selectedIds.contains(option.collegeId);
-
-                                  return Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? const Color(0xFFEFF6FF)
-                                          : Colors.white,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? const Color(0xFF1D4ED8)
-                                            : const Color(0xFFBFDBFE),
-                                        width: isSelected ? 2 : 1,
-                                      ),
-                                    ),
-                                    child: ListTile(
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 8,
-                                      ),
-                                      title: Text(
-                                        _stripSpecializationCode(
-                                            option.collegeName),
-                                        style: const TextStyle(
-                                          color: Color(0xFF1F2937),
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      subtitle: Text(
-                                        'ID: ${option.collegeId}',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade500,
-                                        ),
-                                      ),
-                                      onTap: () {
-                                        setSheetState(() {
-                                          if (isSelected) {
-                                            selectedIds
-                                                .remove(option.collegeId);
-                                            return;
-                                          }
-
-                                          if (selectedIds.length >=
-                                              _maxPreferredColleges) {
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                  'You can select only $_maxPreferredColleges colleges.',
-                                                ),
-                                              ),
-                                            );
-                                            return;
-                                          }
-
-                                          selectedIds.add(option.collegeId);
-                                        });
-                                      },
-                                      trailing: CircleAvatar(
-                                        radius: 14,
-                                        backgroundColor: isSelected
-                                            ? const Color(0xFF2563EB)
-                                            : Colors.white,
-                                        child: Icon(
-                                          isSelected
-                                              ? Icons.check_rounded
-                                              : Icons.add_rounded,
-                                          size: 16,
-                                          color: isSelected
-                                              ? Colors.white
-                                              : const Color(0xFF1D4ED8),
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () =>
-                              Navigator.of(context).pop(selectedIds),
-                          child: const Text('Apply Selection'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (!mounted || selected == null) {
-      return;
-    }
-
-    final selectedOptions = allColleges
-        .where((option) => selected.contains(option.collegeId))
-        .toList();
-
-    setState(() {
-      _selectedPreferredColleges = selectedOptions;
     });
   }
 
@@ -1478,93 +1224,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             ),
           ),
           const SizedBox(height: 12),
-          GestureDetector(
-            onTap: _openPreferredCollegePicker,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _selectedPreferredColleges.isEmpty
-                              ? 'Select Colleges'
-                              : '${_selectedPreferredColleges.length} College${_selectedPreferredColleges.length > 1 ? 's' : ''} Selected',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: _selectedPreferredColleges.isEmpty
-                                ? Colors.grey.shade600
-                                : const Color(0xFF1F2937),
-                          ),
-                        ),
-                        if (_selectedPreferredColleges.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            _selectedPreferredColleges
-                                .take(2)
-                                .map((c) =>
-                                    _stripSpecializationCode(c.collegeName))
-                                .join(', '),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border:
-                          Border.all(color: const Color(0xFFBFDBFE), width: 1),
-                    ),
-                    child: Text(
-                      '${_selectedPreferredColleges.length}/$_maxPreferredColleges',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1D4ED8),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Icon(
-                    _selectedPreferredColleges.isEmpty
-                        ? Icons.add_rounded
-                        : Icons.check_circle_rounded,
-                    color: _selectedPreferredColleges.isEmpty
-                        ? Colors.grey.shade400
-                        : const Color(0xFF10B981),
-                    size: 24,
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _buildCollegePreferenceDropdown(),
         ],
       ),
     );
@@ -1720,6 +1380,239 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildCollegePreferenceDropdown() {
+    return Column(
+      children: [
+        GestureDetector(
+          onTap: () async {
+            if (_allColleges.isEmpty) {
+              setState(() => _collegesLoading = true);
+              
+              // Fetch all colleges
+              List<CollegeOption> allColleges = [];
+              final commonCourses = [
+                'Computer Science Engineering',
+                'Information Technology',
+                'Mechanical Engineering',
+                'Civil Engineering',
+                'Electrical and Electronics Engineering',
+                'Electronics and Communication Engineering',
+                'Electronics and Instrumentation Engineering',
+                'Biomedical Engineering',
+                'Biotechnology',
+                'Chemical Engineering',
+                'Artificial Intelligence and Data Science',
+                'Automobile Engineering',
+                'Aeronautical Engineering',
+              ];
+
+              final collegesMap = <String, CollegeOption>{};
+              for (final course in commonCourses) {
+                try {
+                  final options = await _apiService.getCollegeOptions(
+                    preferredCourse: course,
+                  );
+                  for (final option in options) {
+                    collegesMap[option.collegeId] = option;
+                  }
+                } catch (e) {
+                  debugPrint('Error fetching colleges for $course: $e');
+                }
+              }
+
+              allColleges = collegesMap.values.toList();
+              allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
+
+              setState(() {
+                _allColleges = allColleges;
+                _collegesLoading = false;
+                _collegeDropdownOpen = true;
+              });
+            } else {
+              setState(() => _collegeDropdownOpen = !_collegeDropdownOpen);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _selectedPreferredColleges.isEmpty
+                            ? 'Select Colleges'
+                            : '${_selectedPreferredColleges.length} College${_selectedPreferredColleges.length > 1 ? 's' : ''} Selected',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: _selectedPreferredColleges.isEmpty
+                              ? Colors.grey.shade600
+                              : const Color(0xFF1F2937),
+                        ),
+                      ),
+                      if (_selectedPreferredColleges.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _selectedPreferredColleges
+                              .take(2)
+                              .map((c) => _stripSpecializationCode(c.collegeName))
+                              .join(', '),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
+                  ),
+                  child: Text(
+                    '${_selectedPreferredColleges.length}/$_maxPreferredColleges',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1D4ED8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  _collegeDropdownOpen ? Icons.expand_less : Icons.expand_more,
+                  color: Colors.grey.shade600,
+                  size: 24,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_collegesLoading)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: LinearProgressIndicator(
+              minHeight: 3,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
+            ),
+          ),
+        if (_collegeDropdownOpen && !_collegesLoading)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.4,
+              ),
+              child: _allColleges.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'No colleges available',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      itemCount: _allColleges.length,
+                      itemBuilder: (context, index) {
+                        final college = _allColleges[index];
+                        final isSelected = _selectedPreferredColleges
+                            .any((c) => c.collegeId == college.collegeId);
+
+                        return Container(
+                          color: isSelected
+                              ? const Color(0xFFEFF6FF)
+                              : Colors.transparent,
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
+                            title: Text(
+                              _stripSpecializationCode(college.collegeName),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? const Color(0xFF1D4ED8)
+                                    : const Color(0xFF1F2937),
+                              ),
+                            ),
+                            trailing: isSelected
+                                ? const Icon(Icons.check_circle,
+                                    color: Color(0xFF10B981), size: 20)
+                                : null,
+                            onTap: () {
+                              setState(() {
+                                if (isSelected) {
+                                  _selectedPreferredColleges =
+                                      _selectedPreferredColleges
+                                          .where((c) =>
+                                              c.collegeId != college.collegeId)
+                                          .toList();
+                                } else {
+                                  if (_selectedPreferredColleges.length <
+                                      _maxPreferredColleges) {
+                                    _selectedPreferredColleges = [
+                                      ..._selectedPreferredColleges,
+                                      college,
+                                    ];
+                                  } else {
+                                    _showSnackBar(
+                                      'You can select only $_maxPreferredColleges colleges.',
+                                    );
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+      ],
     );
   }
 
