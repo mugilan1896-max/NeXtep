@@ -99,7 +99,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   List<String> _courseOptions = [];
   Map<String, String> _courseDisplayToQuery = {};
   bool _coursesLoading = false;
-  bool _collegeOptionsLoading = false;
   List<String> _districtOptions = const ['Any'];
   List<CollegeOption> _selectedPreferredColleges = const [];
   static const int _maxPreferredColleges = 5;
@@ -505,10 +504,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       return;
     }
 
-    setState(() {
-      _collegeOptionsLoading = true;
-    });
-
     final queryCourse = _courseDisplayToQuery[selectedCourse] ?? selectedCourse;
     final options = await _apiService.getCollegeOptions(
       preferredCourse: queryCourse,
@@ -531,7 +526,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     setState(() {
       _selectedPreferredColleges = nextSelected;
-      _collegeOptionsLoading = false;
     });
   }
 
@@ -539,8 +533,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     final selectedIds = _selectedPreferredCollegeIds.toSet();
 
     // Load all colleges using category and cutoff from earlier pages
-    setState(() => _collegeOptionsLoading = true);
-
     List<CollegeOption> allColleges = [];
 
     // Try to fetch colleges for multiple courses using the category and cutoff
@@ -584,8 +576,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
 
     allColleges = collegesMap.values.toList();
     allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
-
-    setState(() => _collegeOptionsLoading = false);
 
     if (!mounted) return;
 
@@ -1488,114 +1478,93 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             ),
           ),
           const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF0F9FF),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Choose Colleges',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1E40AF),
-                            ),
+          GestureDetector(
+            onTap: _openPreferredCollegePicker,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.grey.withValues(alpha: 0.1)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _selectedPreferredColleges.isEmpty
+                              ? 'Select Colleges'
+                              : '${_selectedPreferredColleges.length} College${_selectedPreferredColleges.length > 1 ? 's' : ''} Selected',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: _selectedPreferredColleges.isEmpty
+                                ? Colors.grey.shade600
+                                : const Color(0xFF1F2937),
                           ),
-                          SizedBox(height: 4),
+                        ),
+                        if (_selectedPreferredColleges.isNotEmpty) ...[
+                          const SizedBox(height: 4),
                           Text(
-                            'Select up to 5 colleges',
+                            _selectedPreferredColleges
+                                .take(2)
+                                .map((c) =>
+                                    _stripSpecializationCode(c.collegeName))
+                                .join(', '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Color(0xFF3B82F6),
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: const Color(0xFFBFDBFE), width: 1),
-                      ),
-                      child: Text(
-                        '${_selectedPreferredColleges.length}/$_maxPreferredColleges',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E40AF),
-                        ),
-                      ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                      border:
+                          Border.all(color: const Color(0xFFBFDBFE), width: 1),
                     ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                if (_collegeOptionsLoading)
-                  const LinearProgressIndicator(minHeight: 3),
-                if (!_collegeOptionsLoading)
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: _openPreferredCollegePicker,
-                      icon: const Icon(Icons.add_rounded),
-                      label: const Text('Add Colleges'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF1D4ED8),
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
+                    child: Text(
+                      '${_selectedPreferredColleges.length}/$_maxPreferredColleges',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1D4ED8),
                       ),
                     ),
                   ),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(
+                    _selectedPreferredColleges.isEmpty
+                        ? Icons.add_rounded
+                        : Icons.check_circle_rounded,
+                    color: _selectedPreferredColleges.isEmpty
+                        ? Colors.grey.shade400
+                        : const Color(0xFF10B981),
+                    size: 24,
+                  ),
+                ],
+              ),
             ),
           ),
-          if (_selectedPreferredColleges.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _selectedPreferredColleges.map((option) {
-                return Chip(
-                  backgroundColor: const Color(0xFFEFF6FF),
-                  side: const BorderSide(color: Color(0xFFBFDBFE)),
-                  deleteIconColor: const Color(0xFF1D4ED8),
-                  label: Text(
-                    _stripSpecializationCode(option.collegeName),
-                    style: const TextStyle(
-                      color: Color(0xFF1E3A8A),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  onDeleted: () {
-                    setState(() {
-                      _selectedPreferredColleges = _selectedPreferredColleges
-                          .where((item) => item.collegeId != option.collegeId)
-                          .toList();
-                    });
-                  },
-                );
-              }).toList(),
-            ),
-          ],
         ],
       ),
     );
