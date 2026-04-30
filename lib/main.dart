@@ -17,6 +17,8 @@ Future<void> main() async {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp();
     }
+
+    
   } catch (_) {
     // Continue to onboarding even if Firebase initialization fails.
   }

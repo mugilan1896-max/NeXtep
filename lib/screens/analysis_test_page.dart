@@ -544,36 +544,20 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   }
 
   Future<List<CollegeOption>> _getAllCollegesFromDatabase() async {
-    // Fetch all colleges by requesting with common courses
-    final allColleges = <String, CollegeOption>{};
+    try {
+      final allColleges = await _apiService.getAllColleges();
 
-    // Try fetching with multiple common courses to get all colleges
-    final commonCourses = [
-      'Computer Science Engineering',
-      'Mechanical Engineering',
-      'Civil Engineering',
-      'Electrical Engineering'
-    ];
-
-    for (final course in commonCourses) {
-      try {
-        final options = await _apiService.getCollegeOptions(
-          preferredCourse: course,
-          district: null,
-          category: null,
-          cutoff: null,
-        );
-
-        for (final option in options) {
-          allColleges[option.collegeId] = option;
-        }
-      } catch (e) {
-        debugPrint('Error fetching colleges for $course: $e');
+      if (allColleges.isEmpty) {
+        debugPrint('No colleges found from API');
       }
-    }
 
-    return allColleges.values.toList()
-      ..sort((a, b) => a.collegeName.compareTo(b.collegeName));
+      // Sort by college name
+      allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
+      return allColleges;
+    } catch (e) {
+      debugPrint('Error fetching all colleges: $e');
+      return const [];
+    }
   }
 
   Future<void> _openPreferredCollegePicker() async {

@@ -353,6 +353,58 @@ class ApiService {
     return const [];
   }
 
+  Future<List<CollegeOption>> getAllColleges() async {
+    // Fetch all colleges from the database without any filters
+    Object? lastError;
+
+    for (final base in _orderedBaseCandidates()) {
+      final uri = _buildUri(base, '/api/colleges');
+      debugPrint('Fetching all colleges from: $uri');
+
+      try {
+        final timeout = _timeoutForBase(base, path: '/api/colleges');
+        final response = await http.get(uri).timeout(timeout);
+
+        if (response.statusCode == 404 || response.statusCode == 405) {
+          // Try alternative endpoint
+          continue;
+        }
+
+        if (response.statusCode != 200) {
+          lastError = Exception(
+            'Get all colleges API failed with status ${response.statusCode}',
+          );
+          continue;
+        }
+
+        final decoded = json.decode(response.body);
+        if (decoded is! List) {
+          continue;
+        }
+
+        final options = decoded
+            .whereType<Map>()
+            .map((entry) => CollegeOption.fromJson(
+                  Map<String, dynamic>.from(entry),
+                ))
+            .where((item) =>
+                item.collegeId.trim().isNotEmpty &&
+                item.collegeName.trim().isNotEmpty)
+            .toList();
+
+        _preferredBaseUrl = _normalizeBaseUrl(base);
+        return options;
+      } on TimeoutException catch (error) {
+        lastError = error;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    debugPrint('Failed to fetch all colleges. Last error: $lastError');
+    return const [];
+  }
+
   Future<List<String>> getDistricts() async {
     final cached = _cachedDistricts;
     if (cached != null && cached.isNotEmpty) {
