@@ -1,4 +1,4 @@
-$base = "https://pathwise-backend-z43lsllm3q-el.a.run.app"
+$base = "https://pathwise-backend-507210518116.asia-south1.run.app"
 $users = 100
 $timeoutSec = 20
 

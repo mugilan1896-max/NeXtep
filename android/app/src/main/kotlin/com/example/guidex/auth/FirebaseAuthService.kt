@@ -1,12 +1,12 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import com.example.guidex.R
-import com.example.guidex.auth.model.RegisterStudentRequest
-import com.example.guidex.auth.model.StudentProfile
+import com.kanitzatech.nextep.R
+import com.kanitzatech.nextep.auth.model.RegisterStudentRequest
+import com.kanitzatech.nextep.auth.model.StudentProfile
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions

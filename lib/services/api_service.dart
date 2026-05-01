@@ -12,7 +12,8 @@ class ApiService {
 
   static const String _cloudRunBaseUrl = String.fromEnvironment(
     'CLOUD_API_BASE_URL',
-    defaultValue: 'https://pathwise-backend-z43lsllm3q-el.a.run.app',
+    // Default endpoint for college-backend-prod Cloud Run service.
+    defaultValue: 'https://pathwise-backend-507210518116.asia-south1.run.app',
   );
 
   static const String _realDeviceHost =
@@ -163,12 +164,11 @@ class ApiService {
     };
 
     final normalizedDistrict = district?.trim();
-    final effectiveDistrict =
-        (normalizedDistrict != null &&
-                normalizedDistrict.isNotEmpty &&
-                normalizedDistrict.toLowerCase() != 'any')
-            ? normalizedDistrict
-            : null;
+    final effectiveDistrict = (normalizedDistrict != null &&
+            normalizedDistrict.isNotEmpty &&
+            normalizedDistrict.toLowerCase() != 'any')
+        ? normalizedDistrict
+        : null;
 
     Object? lastError;
     for (final base in _orderedBaseCandidates()) {
@@ -575,14 +575,17 @@ class ApiService {
         // Strategy 2: One starts with the other (handles name truncation/extras).
         // Minimum 15 chars to prevent short names like 'mit' from matching.
         if (token.length >= 15 && collegeToken.startsWith(token)) return true;
-        if (collegeToken.length >= 15 && token.startsWith(collegeToken)) return true;
+        if (collegeToken.length >= 15 && token.startsWith(collegeToken))
+          return true;
 
         // Strategy 3: Significant substring overlap (one contains the other).
         // Both must be substantial (>=20 chars) and shorter >= 50% of longer.
         if (token.length >= 20 && collegeToken.length >= 20) {
           if (collegeToken.contains(token) || token.contains(collegeToken)) {
-            final shorter = token.length < collegeToken.length ? token : collegeToken;
-            final longer = token.length < collegeToken.length ? collegeToken : token;
+            final shorter =
+                token.length < collegeToken.length ? token : collegeToken;
+            final longer =
+                token.length < collegeToken.length ? collegeToken : token;
             if (shorter.length >= longer.length * 0.5) {
               return true;
             }
@@ -624,7 +627,8 @@ class ApiService {
       // Apply district filter ONLY to safe colleges.
       if (districtToken != null && districtToken.isNotEmpty) {
         final itemDistrict = _normalizeToken(item.district ?? '');
-        if (itemDistrict.isEmpty) return true; // Include if college has no district info.
+        if (itemDistrict.isEmpty)
+          return true; // Include if college has no district info.
         return itemDistrict.contains(districtToken) ||
             districtToken.contains(itemDistrict);
       }
@@ -677,7 +681,8 @@ class ApiService {
         cutoff: item.cutoff,
         maxCutoff: item.maxCutoff,
         probability: corrected,
-        category: corrected >= 70 ? 'preferred' : (corrected >= 40 ? 'safe' : 'low'),
+        category:
+            corrected >= 70 ? 'preferred' : (corrected >= 40 ? 'safe' : 'low'),
         district: item.district,
         collegeType: item.collegeType,
         collegeRank: item.collegeRank,
@@ -687,7 +692,8 @@ class ApiService {
 
   /// Fallback when only one cutoff value is available (old Cloud Run backend).
   /// Uses quality factor based on student's overall position on 200-mark scale.
-  int _fallbackSingleCutoffProbability(double studentCutoff, double collegeCutoff) {
+  int _fallbackSingleCutoffProbability(
+      double studentCutoff, double collegeCutoff) {
     final studentPct = (studentCutoff / 200.0).clamp(0.0, 1.0);
     final collegePct = (collegeCutoff / 200.0).clamp(0.0, 1.0);
     final gapPct = studentPct - collegePct;

@@ -17,7 +17,7 @@ Optional cache-reset workflow (delete and recreate service):
 Optional custom deploy parameters:
 
 ```powershell
-.\deploy-cloudrun.ps1 -ProjectId pathwise-backend-491815 -ServiceName pathwise-backend -Region asia-south1
+.\deploy-cloudrun.ps1 -ProjectId college-backend-prod -ServiceName pathwise-backend -Region asia-south1
 ```
 
 ## What the script does

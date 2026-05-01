@@ -1,4 +1,4 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 import androidx.activity.ComponentActivity
 import androidx.activity.result.ActivityResultLauncher

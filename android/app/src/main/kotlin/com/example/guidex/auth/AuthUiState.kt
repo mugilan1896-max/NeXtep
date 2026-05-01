@@ -1,6 +1,6 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
-import com.example.guidex.auth.model.StudentProfile
+import com.kanitzatech.nextep.auth.model.StudentProfile
 
 data class AuthUiState(
     val isLoading: Boolean = false,

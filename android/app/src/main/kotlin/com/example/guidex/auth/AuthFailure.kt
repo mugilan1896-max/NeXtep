@@ -1,4 +1,4 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 sealed class AuthFailure(open val message: String) {
     data class Validation(override val message: String) : AuthFailure(message)

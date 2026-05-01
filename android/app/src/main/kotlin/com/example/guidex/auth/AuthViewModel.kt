@@ -1,11 +1,11 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 import android.app.Activity
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.example.guidex.auth.model.RegisterStudentRequest
+import com.kanitzatech.nextep.auth.model.RegisterStudentRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

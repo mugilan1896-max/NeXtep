@@ -1,4 +1,4 @@
-package com.example.guidex
+package com.kanitzatech.nextep
 
 import io.flutter.embedding.android.FlutterActivity
 

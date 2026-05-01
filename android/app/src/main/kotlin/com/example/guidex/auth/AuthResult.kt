@@ -1,4 +1,4 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 sealed class AuthResult<out T> {
     data class Success<T>(val data: T) : AuthResult<T>()

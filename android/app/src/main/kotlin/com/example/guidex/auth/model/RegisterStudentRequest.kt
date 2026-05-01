@@ -1,4 +1,4 @@
-package com.example.guidex.auth.model
+package com.kanitzatech.nextep.auth.model
 
 data class RegisterStudentRequest(
     val name: String,

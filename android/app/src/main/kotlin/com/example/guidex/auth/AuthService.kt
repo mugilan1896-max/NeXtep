@@ -1,9 +1,9 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 import android.app.Activity
 import android.content.Intent
-import com.example.guidex.auth.model.RegisterStudentRequest
-import com.example.guidex.auth.model.StudentProfile
+import com.kanitzatech.nextep.auth.model.RegisterStudentRequest
+import com.kanitzatech.nextep.auth.model.StudentProfile
 
 interface AuthService {
     fun isLoggedIn(): Boolean

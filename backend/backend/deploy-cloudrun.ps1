@@ -1,5 +1,5 @@
 param(
-    [string]$ProjectId = "pathwise-backend-491815",
+    [string]$ProjectId = "college-backend-prod",
     [string]$ServiceName = "pathwise-backend",
     [string]$Region = "asia-south1",
     [string]$ImageName = "pathwise-backend",

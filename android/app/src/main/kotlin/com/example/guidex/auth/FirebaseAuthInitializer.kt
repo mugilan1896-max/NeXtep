@@ -1,4 +1,4 @@
-package com.example.guidex.auth
+package com.kanitzatech.nextep.auth
 
 import android.content.Context
 import com.google.firebase.FirebaseApp
