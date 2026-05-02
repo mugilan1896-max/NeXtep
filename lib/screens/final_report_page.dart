@@ -59,17 +59,17 @@ class _FinalReportPageState extends State<FinalReportPage> {
       if (backendList.isNotEmpty) {
         return backendList;
       }
-      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 75 && c.scorePercentage < 90).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 60 && c.scorePercentage < 95).toList();
   }
 
   /// Returns the dream colleges (< 75% probability)
   List<TargetCollegeResponse> get _dreamColleges {
-      return _clientSideTargetColleges.where((c) => c.scorePercentage < 75).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage < 60).toList();
   }
 
   /// Returns the safe colleges (> 90% probability)
   List<TargetCollegeResponse> get _safeColleges {
-      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 90).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 95).toList();
   }
 
   Future<void> _loadFinalReport() async {
@@ -232,8 +232,8 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
         // ── NO FILTER: Include all ranges ─────────────────────────────
         String label;
-        if (probability >= 90)      label = 'Safe';
-        else if (probability >= 75) label = 'Moderate';
+        if (probability >= 95)      label = 'Safe';
+        else if (probability >= 75) label = 'Target';
         else if (probability >= 60) label = 'Dream';
         else                        label = 'Competitive';
 
@@ -866,7 +866,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
         ],
 
         // Target Colleges Header (UI)
-        _buildCategoryHeader('Target Colleges', 'Strong Probability (75-90%)', Colors.orange.shade600),
+        _buildCategoryHeader('Target Colleges', 'Strong Probability (60-95%)', Colors.orange.shade600),
         const SizedBox(height: 16),
         
         if (colleges.isEmpty)

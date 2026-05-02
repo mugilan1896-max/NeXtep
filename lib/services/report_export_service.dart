@@ -22,13 +22,10 @@ class ReportExportService {
     final pdf = pw.Document();
 
     // Load logo if possible (using splash image as fallback)
-    PdfImage? logoImage;
+    pw.MemoryImage? logoImage;
     try {
       final logoData = await rootBundle.load('assets/image/splash.png');
-      logoImage = PdfImage.file(
-        pdf.document,
-        bytes: logoData.buffer.asUint8List(),
-      );
+      logoImage = pw.MemoryImage(logoData.buffer.asUint8List());
     } catch (_) {}
 
     pdf.addPage(
@@ -77,7 +74,7 @@ class ReportExportService {
                                 width: 40,
                                 height: 40,
                                 margin: const pw.EdgeInsets.only(right: 15),
-                                child: pw.Image(pw.ImageProxy(logoImage)),
+                                child: pw.Image(logoImage),
                               ),
                             pw.Column(
                               crossAxisAlignment: pw.CrossAxisAlignment.start,
