@@ -55,7 +55,7 @@ class ReportExportService {
                 // Background Color
                 pw.Container(
                   color: PdfColor.fromHex('#F3F6FF'),
-                  minHeight: PdfPageFormat.a4.height,
+                  constraints: pw.BoxConstraints(minHeight: PdfPageFormat.a4.height),
                 ),
                 
                 pw.Padding(
