@@ -53,23 +53,23 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
   /// Returns the target colleges to display:
   /// Prefers backend data; falls back to client-side computed list.
-  /// Returns the target colleges (65-85% probability)
+  /// Returns the target colleges (75-90% probability)
   List<TargetCollegeResponse> get _targetColleges {
       final backendList = _finalReportResponse?.targetColleges ?? [];
       if (backendList.isNotEmpty) {
         return backendList;
       }
-      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 65 && c.scorePercentage < 85).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 75 && c.scorePercentage < 90).toList();
   }
 
-  /// Returns the dream colleges (< 65% probability)
+  /// Returns the dream colleges (< 75% probability)
   List<TargetCollegeResponse> get _dreamColleges {
-      return _clientSideTargetColleges.where((c) => c.scorePercentage < 65).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage < 75).toList();
   }
 
-  /// Returns the safe colleges (> 85% probability)
+  /// Returns the safe colleges (> 90% probability)
   List<TargetCollegeResponse> get _safeColleges {
-      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 85).toList();
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 90).toList();
   }
 
   Future<void> _loadFinalReport() async {
@@ -232,10 +232,10 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
         // ── NO FILTER: Include all ranges ─────────────────────────────
         String label;
-        if (probability >= 85)      label = 'Safe';
-        else if (probability >= 65) label = 'Moderate';
-        else if (probability >= 45) label = 'Dream';
-        else                        label = 'Unlikely';
+        if (probability >= 90)      label = 'Safe';
+        else if (probability >= 75) label = 'Moderate';
+        else if (probability >= 60) label = 'Dream';
+        else                        label = 'Competitive';
 
         if (finalScore >= 0.35) { // Show everything with >35% chance
           scored.add(_ScoredCollege(
@@ -859,14 +859,14 @@ class _FinalReportPageState extends State<FinalReportPage> {
       children: [
         // Dream Colleges Header (UI)
         if (dreamColleges.isNotEmpty) ...[
-          _buildCategoryHeader('Dream Colleges', 'Ambitious (Chance < 65%)', Colors.red.shade600),
+          _buildCategoryHeader('Dream Colleges', 'Ambitious (Chance < 75%)', Colors.red.shade600),
           const SizedBox(height: 12),
           ...dreamColleges.asMap().entries.map((entry) => _buildTargetCollegeCard(entry.value, entry.key + 1)),
           const SizedBox(height: 24),
         ],
 
         // Target Colleges Header (UI)
-        _buildCategoryHeader('Target Colleges', 'Strong Probability (65-85%)', Colors.orange.shade600),
+        _buildCategoryHeader('Target Colleges', 'Strong Probability (75-90%)', Colors.orange.shade600),
         const SizedBox(height: 16),
         
         if (colleges.isEmpty)
