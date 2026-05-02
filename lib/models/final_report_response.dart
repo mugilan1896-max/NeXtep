@@ -80,6 +80,7 @@ class TargetCollegeResponse {
   final double hostelScore;
   final double categoryScore;
   final double preferenceBonus;
+  final double cutoff;
 
   TargetCollegeResponse({
     required this.collegeName,
@@ -93,6 +94,7 @@ class TargetCollegeResponse {
     required this.hostelScore,
     required this.categoryScore,
     required this.preferenceBonus,
+    required this.cutoff,
   });
 
   factory TargetCollegeResponse.fromJson(Map<String, dynamic> json) {
@@ -108,6 +110,7 @@ class TargetCollegeResponse {
       hostelScore: (json['hostelScore'] as num?)?.toDouble() ?? 0,
       categoryScore: (json['categoryScore'] as num?)?.toDouble() ?? 0,
       preferenceBonus: (json['preferenceBonus'] as num?)?.toDouble() ?? 0,
+      cutoff: (json['cutoff'] as num?)?.toDouble() ?? 0,
     );
   }
 }

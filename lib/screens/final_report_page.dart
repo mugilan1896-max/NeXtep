@@ -53,12 +53,23 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
   /// Returns the target colleges to display:
   /// Prefers backend data; falls back to client-side computed list.
-  List<TargetCollegeResponse> get _effectiveTargetColleges {
+  /// Returns the target colleges (65-85% probability)
+  List<TargetCollegeResponse> get _targetColleges {
       final backendList = _finalReportResponse?.targetColleges ?? [];
       if (backendList.isNotEmpty) {
         return backendList;
       }
-      return _clientSideTargetColleges;
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 65 && c.scorePercentage < 85).toList();
+  }
+
+  /// Returns the dream colleges (< 65% probability)
+  List<TargetCollegeResponse> get _dreamColleges {
+      return _clientSideTargetColleges.where((c) => c.scorePercentage < 65).toList();
+  }
+
+  /// Returns the safe colleges (> 85% probability)
+  List<TargetCollegeResponse> get _safeColleges {
+      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 85).toList();
   }
 
   Future<void> _loadFinalReport() async {
@@ -108,8 +119,9 @@ class _FinalReportPageState extends State<FinalReportPage> {
       studentCutoff: widget.studentCutoff,
       category: widget.category,
       preferredCourse: widget.preferredCourse,
-      safeColleges: _preferredCollegesForDisplay,
-      targetColleges: _effectiveTargetColleges,
+      safeColleges: _safeColleges.isEmpty ? _preferredCollegesForDisplay : _safeColleges,
+      targetColleges: _targetColleges,
+      dreamColleges: _dreamColleges,
     );
   }
 
@@ -218,13 +230,14 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
         final probability = finalScore * 100.0;
 
-        // ── FILTER: 0.55 to 0.85 ──────────────────────────────────────
-        if (finalScore >= 0.55 && finalScore <= 0.85) {
-          String label;
-          if (probability >= 80)      label = 'Strong';
-          else if (probability >= 65) label = 'Moderate';
-          else                        label = 'Dream';
+        // ── NO FILTER: Include all ranges ─────────────────────────────
+        String label;
+        if (probability >= 85)      label = 'Safe';
+        else if (probability >= 65) label = 'Moderate';
+        else if (probability >= 45) label = 'Dream';
+        else                        label = 'Unlikely';
 
+        if (finalScore >= 0.35) { // Show everything with >35% chance
           scored.add(_ScoredCollege(
             finalScore: finalScore,
             response: TargetCollegeResponse(
@@ -239,6 +252,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
               hostelScore:    double.parse(hostelScore.toStringAsFixed(2)),
               categoryScore:  double.parse(categoryScore.toStringAsFixed(2)),
               preferenceBonus: prefScore,
+              cutoff: college.cutoff,
             ),
           ));
         }
@@ -808,7 +822,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: prob >= 75
+                                    color: prob >= 75
                         ? Colors.green.shade700
                         : (prob >= 60 ? Colors.orange.shade700 : Colors.red.shade700),
                   ),
@@ -837,73 +851,86 @@ class _FinalReportPageState extends State<FinalReportPage> {
   }
 
   Widget _buildTargetCollegesSection() {
+    final colleges = _targetColleges;
+    final dreamColleges = _dreamColleges;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          children: [
-            Container(
-              width: 4,
-              height: 24,
-              decoration: BoxDecoration(
-                color: Colors.orange.shade500,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Target Colleges',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF111827),
-                  ),
-                ),
-                Text(
-                  'Top 15 additional colleges matching your profile',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+        // Dream Colleges Header (UI)
+        if (dreamColleges.isNotEmpty) ...[
+          _buildCategoryHeader('Dream Colleges', 'Ambitious (Chance < 65%)', Colors.red.shade600),
+          const SizedBox(height: 12),
+          ...dreamColleges.asMap().entries.map((entry) => _buildTargetCollegeCard(entry.value, entry.key + 1)),
+          const SizedBox(height: 24),
+        ],
+
+        // Target Colleges Header (UI)
+        _buildCategoryHeader('Target Colleges', 'Strong Probability (65-85%)', Colors.orange.shade600),
         const SizedBox(height: 16),
-        // If the backend has not populated the targetColleges list (or it's null/empty)
-        if (_effectiveTargetColleges.isEmpty)
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Center(
-              child: Text(
-                _isLoading
-                    ? 'Computing target colleges...'
-                    : 'No additional target colleges found.',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 14,
-                ),
-              ),
-            ),
-          )
+        
+        if (colleges.isEmpty)
+          _buildEmptyState('No additional target colleges found.')
         else
           Column(
-            children: _effectiveTargetColleges.asMap().entries.map((entry) {
+            children: colleges.asMap().entries.map((entry) {
               final index = entry.key;
               final college = entry.value;
               return _buildTargetCollegeCard(college, index + 1);
             }).toList(),
           ),
       ],
+    );
+  }
+
+  Widget _buildCategoryHeader(String title, String subtitle, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF111827),
+              ),
+            ),
+            Text(
+              subtitle,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEmptyState(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Center(
+        child: Text(
+          message,
+          style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+        ),
+      ),
     );
   }
 
@@ -1014,7 +1041,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildScoreMetric('Probability', '${college.scorePercentage}%', Icons.analytics),
-              _buildScoreMetric('Cutoff Match', '${(college.cutoffScore * 100).toInt()}%', Icons.trending_up),
+              _buildScoreMetric('Min Cutoff', '${college.cutoff}', Icons.trending_down),
               _buildScoreMetric('Location', '${(college.locationScore * 100).toInt()}%', Icons.location_on),
             ],
           ),
