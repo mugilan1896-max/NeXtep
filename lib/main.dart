@@ -16,9 +16,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   try {
     if (Firebase.apps.isEmpty) {
-      await Firebase.initializeApp();
+      await Firebase.initializeApp().timeout(const Duration(seconds: 5));
     }
-  } catch (_) {
+  } catch (e) {
+    debugPrint('Firebase initialization failed or timed out: $e');
     // Continue to onboarding even if Firebase initialization fails.
   }
 
