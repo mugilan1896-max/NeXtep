@@ -822,7 +822,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                                    color: prob >= 75
+                    color: prob >= 75
                         ? Colors.green.shade700
                         : (prob >= 60 ? Colors.orange.shade700 : Colors.red.shade700),
                   ),

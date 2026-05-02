@@ -74,7 +74,7 @@ class ReportExportService {
                                 width: 40,
                                 height: 40,
                                 margin: const pw.EdgeInsets.only(right: 15),
-                                child: pw.Image(logoImage),
+                                child: pw.Image(logoImage!),
                               ),
                             pw.Column(
                               crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -259,7 +259,7 @@ class ReportExportService {
               pw.Row(
                 mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                 children: [
-                  pw.Text('Cutoff: $cutoffValue', style: const pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                  pw.Text('Cutoff: $cutoffValue', style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
                   pw.Container(
                     padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: pw.BoxDecoration(
