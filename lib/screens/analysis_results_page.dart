@@ -851,57 +851,104 @@ class _AnalysisResultsPageState extends State<AnalysisResultsPage> {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: _isDownloadingReport ? null : _downloadReport,
-              style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                side: BorderSide(color: Colors.grey.shade300),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
-                ),
-              ),
-              child: _isDownloadingReport
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Text(
-                      'Download Report',
-                      style: TextStyle(
-                        color: Color(0xFF4B5563),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 2,
+          // Final Report Button (Primary)
+          SizedBox(
+            width: double.infinity,
             child: ElevatedButton(
-              onPressed: () => Navigator.pushReplacementNamed(
+              onPressed: () => Navigator.pushNamed(
                 context,
-                AppRoutes.analysisTest,
+                AppRoutes.finalReport,
+                arguments: {
+                  'studentName': widget.name ?? 'Student',
+                  'category': widget.category ?? 'OC',
+                  'studentCutoff': widget.cutoff ?? 0,
+                  'preferredCourse': widget.interest ??
+                      (widget.selectedCourses?.firstOrNull ?? ''),
+                  'district': widget.district,
+                  'hostelRequired':
+                      false, // Would need to track this from the form
+                  'preferredCollegeIds': widget.preferredCollegeIds ?? [],
+                  'preferredCollegeNames': widget.preferredColleges ?? [],
+                },
               ),
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF4F46E5),
+                backgroundColor: const Color(0xFF10B981),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
                 ),
                 elevation: 4,
-                shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                shadowColor: const Color(0xFF10B981).withValues(alpha: 0.3),
               ),
-              child: const Text(
-                'Re-analyze',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.assessment, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'View Final Report',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                ],
               ),
             ),
+          ),
+          const SizedBox(height: 12),
+          // Secondary Actions Row
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _isDownloadingReport ? null : _downloadReport,
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    side: BorderSide(color: Colors.grey.shade300),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: _isDownloadingReport
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Download',
+                          style: TextStyle(
+                            color: Color(0xFF4B5563),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pushReplacementNamed(
+                    context,
+                    AppRoutes.analysisTest,
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Re-analyze',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

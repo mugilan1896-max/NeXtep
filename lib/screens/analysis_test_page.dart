@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:guidex/app_routes.dart';
 import 'package:guidex/models/college_option.dart';
 import 'package:guidex/models/recommendation_result.dart';
+import 'package:guidex/models/recommendation.dart';
 import 'package:guidex/services/api_service.dart';
 
 class AnalysisTestPage extends StatefulWidget {
@@ -64,28 +65,8 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   String _selectedDistrict = 'Any';
   String _selectedInterest = '';
   String _hostelPreference = ''; // 'Yes' or 'No'
-  List<String> _assignedDepartments = [];
+  final List<String> _assignedDepartments = [];
 
-  // Interest Area to Departments Mapping
-  static const Map<String, List<String>> _interestAreaToDepartments = {
-    'App Development': ['CSE', 'IT'],
-    'Web Development': ['CSE', 'IT'],
-    'AI / ML': ['CSE', 'AI&DS'],
-    'Data Science': ['CSE', 'AI&DS'],
-    'Embedded Systems': ['ECE', 'EEE'],
-    'Core Engineering (Mechanical, Civil)': ['ME', 'CE'],
-    'Bio/Medical': ['BME'],
-  };
-
-  static const List<String> _interestAreaOptions = [
-    'App Development',
-    'Web Development',
-    'AI / ML',
-    'Data Science',
-    'Embedded Systems',
-    'Core Engineering (Mechanical, Civil)',
-    'Bio/Medical',
-  ];
 
   final List<String> _fallbackCourses = [
     'Computer Science Engineering',
@@ -268,6 +249,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     _loadCourses();
     _loadDistricts();
     _loadPreferredCollegeOptions();
+    _loadCollegeOptions();
   }
 
   @override
@@ -533,6 +515,69 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     });
   }
 
+  Future<void> _loadCollegeOptions() async {
+    final commonCourses = [
+      'Computer Science Engineering',
+      'Information Technology',
+      'Mechanical Engineering',
+      'Civil Engineering',
+      'Electrical and Electronics Engineering',
+      'Electronics and Communication Engineering',
+      'Electronics and Instrumentation Engineering',
+      'Biomedical Engineering',
+      'Biotechnology',
+      'Chemical Engineering',
+      'Artificial Intelligence and Data Science',
+      'Automobile Engineering',
+      'Aeronautical Engineering',
+    ];
+
+    final collegesMap = <String, CollegeOption>{};
+
+    // Fetch all courses in parallel with timeout protection
+    try {
+      final futures = commonCourses.map((course) =>
+          _apiService.getCollegeOptions(preferredCourse: course).timeout(
+            const Duration(seconds: 8),
+            onTimeout: () {
+              debugPrint('Timeout fetching colleges for $course');
+              return <CollegeOption>[];
+            },
+          ).catchError((e) {
+            debugPrint('Error fetching colleges for $course: $e');
+            return <CollegeOption>[];
+          }));
+
+      final results = await Future.wait(futures);
+
+      for (final options in results) {
+        for (final option in options) {
+          collegesMap[option.collegeId] = option;
+        }
+      }
+    } catch (e) {
+      debugPrint('Error during parallel college fetch: $e');
+    }
+
+    if (!mounted) return;
+
+    // If no colleges fetched from API, use mock data
+    final allColleges =
+        collegesMap.isEmpty ? _getMockColleges() : collegesMap.values.toList();
+
+    allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
+
+    setState(() {
+      _allColleges = allColleges;
+      _collegesLoading = false;
+    });
+
+    if (collegesMap.isEmpty) {
+      debugPrint(
+          '⚠️ Backend API returned no colleges. Using sample colleges for testing.');
+    }
+  }
+
   bool _validateStep1() {
     // Validate Step 1 (1/3): Name, Age, Mobile
     // Reset all error states
@@ -709,10 +754,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       return;
     }
 
-    // Use assigned departments as courses for API call
-    final selectedCoursesForResults = _assignedDepartments.isNotEmpty
-        ? List<String>.from(_assignedDepartments)
-        : [_selectedInterest];
+
 
     // Get the first assigned department or interest as the query
     final interestQuery = _assignedDepartments.isNotEmpty
@@ -721,46 +763,108 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     try {
       final String? effectiveDistrict =
           _selectedDistrict == 'Any' ? null : _selectedDistrict;
-      RecommendationResult recommendationResult =
-          await _apiService.getRecommendationResult(
-        category: _selectedCategory,
-        cutoff: _cutoff,
-        preferredCourse: interestQuery,
-        district: effectiveDistrict,
-        preferredCollegeIds: _selectedPreferredCollegeIds,
-        preferredCollegeNames: _selectedPreferredColleges
-            .map((item) => _stripSpecializationCode(item.collegeName))
-            .toList(),
-      );
+          
+      List<Recommendation> best5Colleges = [];
+      
+      try {
+        // 1. Try to fetch the REAL data from the PostgreSQL database via Backend API
+        final result = await _apiService.getRecommendationResult(
+          category: _selectedCategory,
+          cutoff: _cutoff,
+          preferredCourse: interestQuery,
+          district: effectiveDistrict,
+          preferredCollegeIds: _selectedPreferredCollegeIds,
+          preferredCollegeNames: _selectedPreferredColleges
+              .map((item) => _stripSpecializationCode(item.collegeName))
+              .toList(),
+        );
+        
+        best5Colleges = result.preferredColleges;
+        
+        // If preferred was empty but we have safe ones, fallback to safe
+        if (best5Colleges.isEmpty && result.safeColleges.isNotEmpty) {
+          best5Colleges = result.safeColleges.take(5).toList();
+        }
+        
+        // Ensure it doesn't throw if successful but empty
+        if (best5Colleges.isEmpty) throw Exception('API returned empty results');
+
+        // OVERRIDE Backend logic: Apply the precise ratio formula the user requested 
+        // using the real cutoff from the database
+        for (int i = 0; i < best5Colleges.length; i++) {
+          var college = best5Colleges[i];
+          double realCollegeCutoff = college.cutoff > 0 ? college.cutoff : 100.0;
+          double ratio = _cutoff / realCollegeCutoff;
+          int probability;
+          
+          if (ratio >= 1.0) {
+              probability = 90 + (i % 6); // 90-95%
+          } else if (ratio >= 0.9) {
+              probability = 75 + (i % 16); // 75-90%
+          } else if (ratio >= 0.8) {
+              probability = 60 + (i % 16); // 60-75%
+          } else if (ratio >= 0.7) {
+              probability = 40 + (i % 21); // 40-60%
+          } else {
+              probability = 10 + (i % 31); // 10-40%
+          }
+
+          best5Colleges[i] = Recommendation(
+            collegeName: college.collegeName,
+            courseName: college.courseName,
+            cutoff: realCollegeCutoff,
+            maxCutoff: college.maxCutoff,
+            probability: probability,
+            category: college.category,
+            district: college.district,
+            collegeType: college.collegeType,
+            collegeRank: college.collegeRank,
+          );
+        }
+
+        // Re-sort by the new probability (highest first)
+        best5Colleges.sort((a, b) => b.probability.compareTo(a.probability));
+
+      } catch (e) {
+        debugPrint('Backend API failed: $e');
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+        });
+        _showSnackBar(
+          'Failed to fetch college cutoffs. Ensure your database contains these colleges or check your server connection.',
+        );
+        return; // Stop execution, do not navigate to final report
+      }
 
       if (!mounted) return;
 
-      if (recommendationResult.isEmpty) {
-        final districtLabel = effectiveDistrict ?? 'all districts';
+      if (best5Colleges.isEmpty) {
         _showSnackBar(
-          'No exact $_selectedInterest seats found for $districtLabel at cutoff ${_cutoff.toStringAsFixed(1)}. Try Software/IT or another category.',
+          'Please select up to 5 preferred colleges before searching.',
         );
       }
 
-      Navigator.pushNamed(context, AppRoutes.analysisResults, arguments: {
-        'name': _nameController.text.trim().isEmpty
+      Navigator.pushNamed(context, AppRoutes.finalReport, arguments: {
+        'studentName': _nameController.text.trim().isEmpty
             ? 'Student'
             : _nameController.text.trim(),
         'category': _selectedCategory,
-        'cutoff': _cutoff,
-        'selectedCourses': selectedCoursesForResults,
-        'interest': interestQuery,
+        'studentCutoff': _cutoff,
+        'preferredCourse': interestQuery,
         'district': effectiveDistrict,
+        'hostelRequired': _hostelPreference == 'Yes',
         'preferredCollegeIds': _selectedPreferredCollegeIds,
-        'preferredColleges': _selectedPreferredColleges
+        'preferredCollegeNames': _selectedPreferredColleges
             .map((item) => _stripSpecializationCode(item.collegeName))
             .toList(),
-        'prefetchedResult': recommendationResult,
+        'allRecommendations': best5Colleges,
+        'safeColleges': best5Colleges,
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to fetch recommendations')),
+        SnackBar(content: Text('Error generating recommendations: $e')),
       );
     } finally {
       if (mounted) {
@@ -1058,9 +1162,9 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             ),
           ),
           const SizedBox(height: 32),
-          // 3. Area of Interest
+          // 3. Interest Courses (Departments)
           const Text(
-            "Area of Interest",
+            "Select Your Interest Course",
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w600,
@@ -1068,51 +1172,71 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             ),
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: _interestAreaOptions.map((interest) {
-              final isSelected = _selectedInterest == interest;
-              return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedInterest = interest;
-                    _assignedDepartments =
-                        _interestAreaToDepartments[interest] ?? [];
-                  });
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF4F46E5) : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isSelected
-                          ? const Color(0xFF4F46E5)
-                          : Colors.grey.withValues(alpha: 0.2),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.02),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Text(
-                    interest,
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color:
-                          isSelected ? Colors.white : const Color(0xFF374151),
+          if (_coursesLoading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.indigo.shade600,
                     ),
                   ),
                 ),
-              );
-            }).toList(),
-          ),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _courseOptions.map((course) {
+                final isSelected = _selectedInterest == course;
+                return GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedInterest = course;
+                    });
+                    _loadPreferredCollegeOptions();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color:
+                          isSelected ? const Color(0xFF4F46E5) : Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? const Color(0xFF4F46E5)
+                            : Colors.grey.withValues(alpha: 0.2),
+                        width: 1.5,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      course,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF374151),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
           const SizedBox(height: 32),
           // 4. Category Selection
           const Text(
@@ -1388,65 +1512,8 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     return Column(
       children: [
         GestureDetector(
-          onTap: () async {
-            if (_allColleges.isEmpty) {
-              setState(() => _collegesLoading = true);
-
-              // Fetch all colleges
-              List<CollegeOption> allColleges = [];
-              final commonCourses = [
-                'Computer Science Engineering',
-                'Information Technology',
-                'Mechanical Engineering',
-                'Civil Engineering',
-                'Electrical and Electronics Engineering',
-                'Electronics and Communication Engineering',
-                'Electronics and Instrumentation Engineering',
-                'Biomedical Engineering',
-                'Biotechnology',
-                'Chemical Engineering',
-                'Artificial Intelligence and Data Science',
-                'Automobile Engineering',
-                'Aeronautical Engineering',
-              ];
-
-              final collegesMap = <String, CollegeOption>{};
-
-              for (final course in commonCourses) {
-                try {
-                  final options = await _apiService.getCollegeOptions(
-                    preferredCourse: course,
-                  );
-                  if (options.isNotEmpty) {
-                    for (final option in options) {
-                      collegesMap[option.collegeId] = option;
-                    }
-                  }
-                } catch (e) {
-                  debugPrint('Error fetching colleges for $course: $e');
-                }
-              }
-
-              // If API failed (0 colleges fetched), use mock data
-              if (allColleges.isEmpty && collegesMap.isEmpty) {
-                debugPrint(
-                    '⚠️ Backend API is not responding. Using sample colleges for testing.');
-                allColleges = _getMockColleges();
-              } else {
-                allColleges = collegesMap.values.toList();
-              }
-
-              allColleges
-                  .sort((a, b) => a.collegeName.compareTo(b.collegeName));
-
-              setState(() {
-                _allColleges = allColleges;
-                _collegesLoading = false;
-                _collegeDropdownOpen = true;
-              });
-            } else {
-              setState(() => _collegeDropdownOpen = !_collegeDropdownOpen);
-            }
+          onTap: () {
+            setState(() => _collegeDropdownOpen = !_collegeDropdownOpen);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -1529,17 +1596,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             ),
           ),
         ),
-        if (_collegesLoading)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: LinearProgressIndicator(
-              minHeight: 3,
-              backgroundColor: Colors.grey.shade200,
-              valueColor:
-                  const AlwaysStoppedAnimation<Color>(Color(0xFF4F46E5)),
-            ),
-          ),
-        if (_collegeDropdownOpen && !_collegesLoading)
+        if (_collegeDropdownOpen && _allColleges.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Container(
@@ -1684,640 +1741,640 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     // Real Tamil Nadu Engineering Colleges only (300 colleges)
     final mockColleges = [
       // Major National Institutes
-      CollegeOption(
+      const CollegeOption(
           collegeId: '1', collegeName: 'Indian Institute of Technology Madras'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '2',
           collegeName: 'National Institute of Technology Trichy'),
-      CollegeOption(collegeId: '3', collegeName: 'Anna University'),
-      CollegeOption(collegeId: '4', collegeName: 'VIT Vellore'),
-      CollegeOption(
+      const CollegeOption(collegeId: '3', collegeName: 'Anna University'),
+      const CollegeOption(collegeId: '4', collegeName: 'VIT Vellore'),
+      const CollegeOption(
           collegeId: '5',
           collegeName: 'SRM Institute of Science and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '6', collegeName: 'Manipal Institute of Technology'),
 
       // Top Private Colleges - Chennai
-      CollegeOption(collegeId: '7', collegeName: 'PSG College of Technology'),
-      CollegeOption(
+      const CollegeOption(collegeId: '7', collegeName: 'PSG College of Technology'),
+      const CollegeOption(
           collegeId: '8', collegeName: 'Thiagarajar College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '9', collegeName: 'Bannari Amman Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '10',
           collegeName: 'Kalasalingam Academy of Research and Education'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '11', collegeName: 'Sri Sairam Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '12',
           collegeName: 'Saveetha Institute of Medical and Technical Sciences'),
-      CollegeOption(collegeId: '13', collegeName: 'KCG College of Technology'),
-      CollegeOption(
+      const CollegeOption(collegeId: '13', collegeName: 'KCG College of Technology'),
+      const CollegeOption(
           collegeId: '14', collegeName: 'Rajalakshmi Engineering College'),
-      CollegeOption(collegeId: '15', collegeName: 'RMK College of Engineering'),
-      CollegeOption(
+      const CollegeOption(collegeId: '15', collegeName: 'RMK College of Engineering'),
+      const CollegeOption(
           collegeId: '16', collegeName: 'Easwari Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '17', collegeName: 'Sri Ramakrishna Engineering College'),
-      CollegeOption(collegeId: '18', collegeName: 'KMEA Engineering College'),
-      CollegeOption(
+      const CollegeOption(collegeId: '18', collegeName: 'KMEA Engineering College'),
+      const CollegeOption(
           collegeId: '19',
           collegeName: 'Vel Tech Rangarajan Dr. Sagunthala R&D Institute'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '20', collegeName: 'Panimalar Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '21',
           collegeName: 'Sri Venkateswara College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '22',
           collegeName: 'Sathyabama Institute of Science and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '23',
           collegeName: 'Meenakshi Academy of Higher Education'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '24', collegeName: 'Jeppiaar Engineering College'),
-      CollegeOption(collegeId: '25', collegeName: 'KM College of Engineering'),
-      CollegeOption(collegeId: '26', collegeName: 'SSN College of Engineering'),
-      CollegeOption(
+      const CollegeOption(collegeId: '25', collegeName: 'KM College of Engineering'),
+      const CollegeOption(collegeId: '26', collegeName: 'SSN College of Engineering'),
+      const CollegeOption(
           collegeId: '27',
           collegeName: 'Loyola-ICAM College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '28', collegeName: 'Velammal Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '29',
           collegeName: 'Chettinad College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '30',
           collegeName: 'Sri Shanmugha College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '31', collegeName: 'College of Engineering Guindy'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '32', collegeName: 'Madras Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '33', collegeName: 'Alagappa College of Technology'),
-      CollegeOption(collegeId: '34', collegeName: 'ACE Engineering College'),
-      CollegeOption(
+      const CollegeOption(collegeId: '34', collegeName: 'ACE Engineering College'),
+      const CollegeOption(
           collegeId: '35', collegeName: 'Adhiparasakthi Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '36', collegeName: 'Adithya Institute of Technology'),
-      CollegeOption(collegeId: '37', collegeName: 'Agni College of Technology'),
-      CollegeOption(
+      const CollegeOption(collegeId: '37', collegeName: 'Agni College of Technology'),
+      const CollegeOption(
           collegeId: '38',
           collegeName: 'Akshaya Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '39', collegeName: 'Aloha College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '40', collegeName: 'Amal Jyothi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '41', collegeName: 'Amrita School of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '42', collegeName: 'Anand Institute of Higher Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '43', collegeName: 'Ananth College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '44', collegeName: 'Andrew College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '45',
           collegeName: 'Anil Neerukonda Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '46', collegeName: 'Anjuman Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '47', collegeName: 'Anna Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '48', collegeName: 'Annai Violet College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '49',
           collegeName: 'Annai Velankanni College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '50',
           collegeName: 'Apollo Institute of Engineering and Technology'),
-      CollegeOption(collegeId: '51', collegeName: 'Arasu Engineering College'),
-      CollegeOption(
+      const CollegeOption(collegeId: '51', collegeName: 'Arasu Engineering College'),
+      const CollegeOption(
           collegeId: '52',
           collegeName: 'Arulmigu Meenakshi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '53',
           collegeName: 'Varuvan Vadivelan Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '54',
           collegeName: 'Sri Krishna College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '55', collegeName: 'Adhiyamaan College of Engineering'),
-      CollegeOption(collegeId: '56', collegeName: 'KVN College of Engineering'),
-      CollegeOption(
+      const CollegeOption(collegeId: '56', collegeName: 'KVN College of Engineering'),
+      const CollegeOption(
           collegeId: '57', collegeName: 'Arun College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '58',
           collegeName: 'Sri Muthukumaran Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '59', collegeName: 'Sruthi Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '60',
           collegeName: 'RVS College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '61',
           collegeName: 'Prince Shri Venkateshwara College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '62', collegeName: 'Nandha College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '63', collegeName: 'Muthuraman College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '64', collegeName: 'Mepco Schlenk Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '65', collegeName: 'Mahendra Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '66',
           collegeName: 'M.A.M. College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '67',
           collegeName: 'Lords Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '68', collegeName: 'Karunanithy Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '69', collegeName: 'Jayamukhi Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '70', collegeName: 'Jawahar College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '71', collegeName: 'IITA Institute of Technology'),
-      CollegeOption(collegeId: '72', collegeName: 'ITS Engineering College'),
-      CollegeOption(
+      const CollegeOption(collegeId: '72', collegeName: 'ITS Engineering College'),
+      const CollegeOption(
           collegeId: '73', collegeName: 'Hermits College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '74', collegeName: 'Gnanamani College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '75',
           collegeName: 'GRT Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '76',
           collegeName: 'Gtech Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '77', collegeName: 'Francis Xavier Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '78',
           collegeName: 'Easa College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '79', collegeName: 'East Point College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '80',
           collegeName: 'Dhaanish Ahmed College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '81',
           collegeName: 'Dr Mahalingam College of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '82', collegeName: 'Don Bosco Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '83',
           collegeName: 'Dhanalakshmi Srinivasan Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '84', collegeName: 'Datta Meghe College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '85', collegeName: 'Cygnus Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '86',
           collegeName: 'Crescent Institute of Science and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '87', collegeName: 'Coimbatore Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '88', collegeName: 'Chettinad School of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '89', collegeName: 'C V Raman College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '90',
           collegeName: 'Bharath Institute of Higher Education and Research'),
-      CollegeOption(collegeId: '91', collegeName: 'Bharath University'),
-      CollegeOption(
+      const CollegeOption(collegeId: '91', collegeName: 'Bharath University'),
+      const CollegeOption(
           collegeId: '92',
           collegeName: 'Bharat Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '93', collegeName: 'Bhainswal Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '94', collegeName: 'B S Abdur Rahman Crescent University'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '95',
           collegeName: 'Bharathidasan Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '96', collegeName: 'Arjun College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '97', collegeName: 'Aksharam Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '98', collegeName: 'Alliance Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '99', collegeName: 'Ariyalur Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '100',
           collegeName: 'Annamalai University Institute of Engineering'),
 
       // Additional Tamil Nadu Colleges (101-300)
-      CollegeOption(
+      const CollegeOption(
           collegeId: '101', collegeName: 'Asoka Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '102', collegeName: 'Adharsh Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '103', collegeName: 'Arulmurugan Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '104',
           collegeName: 'Alagappa Chettiar College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '105', collegeName: 'Arunai Engineering College'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '106', collegeName: 'Budha Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '107',
           collegeName: 'Bangalore Institute of Technology and Management'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '108', collegeName: 'Bhavan College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '109',
           collegeName: 'Ballari Institute of Technology and Management'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '110', collegeName: 'Bapuji Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '111', collegeName: 'Boojho Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '112', collegeName: 'Brilliant Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '113', collegeName: 'Bhubaneswar Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '114', collegeName: 'Binayak Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '115',
           collegeName:
               'Bhaskaracharya Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '116', collegeName: 'Chekuri College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '117',
           collegeName: 'Chhattisgarh Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '118', collegeName: 'Chandigarh College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '119', collegeName: 'Chennai Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '120', collegeName: 'Compu College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '121', collegeName: 'Core Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '122', collegeName: 'Chandra College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '123', collegeName: 'Cristatec Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '124', collegeName: 'Cybernetic Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '125', collegeName: 'Cuddalore Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '126', collegeName: 'Denzil Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '127', collegeName: 'Delta College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '128', collegeName: 'Danmit College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '129', collegeName: 'Desai Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '130', collegeName: 'Divyada Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '131', collegeName: 'Dindigul Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '132', collegeName: 'Devi Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '133', collegeName: 'Durga Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '134', collegeName: 'Deepa College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '135', collegeName: 'Edenz College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '136', collegeName: 'Elite Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '137', collegeName: 'Erode Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '138', collegeName: 'Eswar Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '139', collegeName: 'Ennore College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '140', collegeName: 'Ephah Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '141',
           collegeName: 'Equinox Institute of Engineering and Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '142', collegeName: 'Etoile Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '143', collegeName: 'Ethiraj College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '144', collegeName: 'Fedora Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '145', collegeName: 'Fathima Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '146', collegeName: 'Foremost Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '147', collegeName: 'Fleur Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '148', collegeName: 'Fortune Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '149', collegeName: 'Fusion College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '150', collegeName: 'Finesse Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '151', collegeName: 'Gajendra Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '152', collegeName: 'Ganga Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '153', collegeName: 'Gauss Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '154', collegeName: 'Genesis College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '155', collegeName: 'Gandhian Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '156', collegeName: 'Gauhati Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '157', collegeName: 'Garuda Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '158', collegeName: 'Geeta College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '159', collegeName: 'Glorious Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '160', collegeName: 'Geet Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '161', collegeName: 'Hare Krishna College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '162', collegeName: 'Harshini Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '163', collegeName: 'Hatha Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '164', collegeName: 'Hasrat Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '165', collegeName: 'Himalaya Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '166', collegeName: 'Hitra Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '167', collegeName: 'Horizon College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '168', collegeName: 'Hymavathi Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '169', collegeName: 'Hitech College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '170', collegeName: 'Holistic Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '171', collegeName: 'Indra Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '172', collegeName: 'Innovision College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '173',
           collegeName: 'Inspiration Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '174', collegeName: 'Intech Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '175', collegeName: 'Infinity College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '176', collegeName: 'Iskon Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '177', collegeName: 'Iris Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '178', collegeName: 'Integral College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '179', collegeName: 'Interlink Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '180', collegeName: 'Insight College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '181', collegeName: 'Jackman College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '182', collegeName: 'Jade Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '183', collegeName: 'Jay Bharat Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '184', collegeName: 'Jayanthi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '185', collegeName: 'Jayan Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '186', collegeName: 'Jeethendra Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '187', collegeName: 'Jethi Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '188', collegeName: 'Jewel Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '189', collegeName: 'Jinnah College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '190', collegeName: 'Joy Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '191', collegeName: 'Kalyani Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '192', collegeName: 'Kamineni Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '193', collegeName: 'Kamini College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '194',
           collegeName: 'Kanyakumari Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '195', collegeName: 'Kanya College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '196', collegeName: 'Karunya Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '197', collegeName: 'Kaveri Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '198', collegeName: 'Kavya Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '199', collegeName: 'Keshab Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '200', collegeName: 'Keystone College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '201', collegeName: 'Krishna Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '202', collegeName: 'Krishan College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '203',
           collegeName: 'Krishnamurthy Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '204', collegeName: 'Kriya Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '205', collegeName: 'Krishnaveni College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '206', collegeName: 'Krishtava Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '207', collegeName: 'Kshitij Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '208', collegeName: 'Kulandai Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '209', collegeName: 'Kumaran Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '210', collegeName: 'Kunaal Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '211', collegeName: 'Lakshana Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '212', collegeName: 'Lakshmi Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '213', collegeName: 'Laksmhi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '214', collegeName: 'Laxmi Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '215', collegeName: 'Laya Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '216', collegeName: 'Legacy College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '217', collegeName: 'Lekhraj Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '218', collegeName: 'Liberty Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '219', collegeName: 'Lifeway College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '220', collegeName: 'Lighthouse Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '221', collegeName: 'Lilith Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '222', collegeName: 'Limbus College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '223', collegeName: 'Lincoln Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '224', collegeName: 'Lindsey Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '225', collegeName: 'Linium College of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '226', collegeName: 'Lucia Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '227', collegeName: 'Lucky Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '228', collegeName: 'Luminous College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '229', collegeName: 'Luna Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '230', collegeName: 'Luv Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '231', collegeName: 'Madhav Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '232', collegeName: 'Madhavi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '233', collegeName: 'Madhya Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '234', collegeName: 'Madhyam Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '235', collegeName: 'Madhuvan College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '236', collegeName: 'Magnum Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '237', collegeName: 'Mahakal Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '238', collegeName: 'Mahabali College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '239', collegeName: 'Mahadev Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '240', collegeName: 'Mahakali Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '241', collegeName: 'Mahalakshmi College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '242', collegeName: 'Mahaprabhu Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '243', collegeName: 'Maharaj Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '244', collegeName: 'Maharashtra Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '245', collegeName: 'Mahaveer Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '246', collegeName: 'Mahendra College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '247', collegeName: 'Mahesh Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '248', collegeName: 'Maheswari Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '249', collegeName: 'Mahima Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '250', collegeName: 'Mahita Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '251', collegeName: 'Mahith Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '252', collegeName: 'Mahona Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '253', collegeName: 'Mahuja Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '254', collegeName: 'Maiden Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '255', collegeName: 'Maindak Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '256', collegeName: 'Mainendra Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '257', collegeName: 'Mainia Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '258', collegeName: 'Maitra Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '259', collegeName: 'Majid Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '260', collegeName: 'Majolius Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '261', collegeName: 'Makara Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '262', collegeName: 'Malaya Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '263', collegeName: 'Malayal Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '264', collegeName: 'Malik Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '265', collegeName: 'Maliram Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '266', collegeName: 'Mallika Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '267', collegeName: 'Malvika Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '268', collegeName: 'Mamata Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '269', collegeName: 'Mamit Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '270', collegeName: 'Manaja Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '271', collegeName: 'Manava Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '272', collegeName: 'Manbir Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '273', collegeName: 'Manbodh Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '274', collegeName: 'Manbodh Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '275', collegeName: 'Mandal Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '276', collegeName: 'Mandara Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '277', collegeName: 'Mandavi Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '278', collegeName: 'Mandira Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '279', collegeName: 'Mandita Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '280', collegeName: 'Mandyam Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '281', collegeName: 'Maneesha Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '282', collegeName: 'Manela Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '283', collegeName: 'Manerji Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '284', collegeName: 'Manesh Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '285', collegeName: 'Maneta Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '286', collegeName: 'Manetha Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '287', collegeName: 'Maneto Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '288', collegeName: 'Maneva Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '289', collegeName: 'Maneway Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '290', collegeName: 'Maneya Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '291',
           collegeName: 'Mangalamukta Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '292', collegeName: 'Mangalam Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '293', collegeName: 'Mangali Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '294', collegeName: 'Mangalya Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '295', collegeName: 'Mangana Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '296', collegeName: 'Manganchi Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '297', collegeName: 'Manger Institute of Technology'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '298', collegeName: 'Mangeswar Institute of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '299', collegeName: 'Mangeswar College of Engineering'),
-      CollegeOption(
+      const CollegeOption(
           collegeId: '300', collegeName: 'Manghera Institute of Technology'),
     ];
 

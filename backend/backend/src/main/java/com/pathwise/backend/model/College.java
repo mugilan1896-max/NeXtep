@@ -28,4 +28,7 @@ public class College {
 
     @Column(name = "city")
     private String city;
+
+    @Column(name = "hostel_available")
+    private Boolean hostelAvailable;
 }

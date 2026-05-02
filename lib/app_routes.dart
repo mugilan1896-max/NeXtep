@@ -6,4 +6,5 @@ class AppRoutes {
   static const String userCategory = '/user_category';
   static const String analysisTest = '/analysis_test';
   static const String analysisResults = '/analysis_results';
+  static const String finalReport = '/final_report';
 }

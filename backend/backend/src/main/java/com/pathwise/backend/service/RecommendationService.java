@@ -166,8 +166,8 @@ public class RecommendationService {
                 continue;
             }
 
-            int probability = calculateProbability(studentCutoff, communityMax, communityMin);
-            if (probability < 30) {
+            int probability = calculateProbability(studentCutoff, communityMin);
+            if (probability < 10) {
                 continue;
             }
 
@@ -248,73 +248,24 @@ public class RecommendationService {
                 .build();
     }
 
-    private int calculateProbability(double studentCutoff, double communityMax, double communityMin) {
-        if (Double.isNaN(studentCutoff) || Double.isNaN(communityMax) || communityMax <= 0.0) {
+    private int calculateProbability(double studentCutoff, double collegeCutoff) {
+        if (Double.isNaN(studentCutoff) || Double.isNaN(collegeCutoff) || collegeCutoff <= 0.0) {
             return -1;
         }
 
-        double max = communityMax;
-        double min = communityMin;
+        double ratio = studentCutoff / collegeCutoff;
 
-        if (!Double.isNaN(min) && min > max) {
-            double temp = max;
-            max = min;
-            min = temp;
+        if (ratio >= 1.0) {
+            return 95; // 90-95%
+        } else if (ratio >= 0.9) {
+            return 82; // 75-90%
+        } else if (ratio >= 0.8) {
+            return 68; // 60-75%
+        } else if (ratio >= 0.7) {
+            return 50; // 40-60%
+        } else {
+            return 25; // 10-40%
         }
-
-        double gap = studentCutoff - max;
-
-        if (gap >= 15.0) {
-            return 99;
-        }
-
-        if (gap >= 10.0) {
-            return 97;
-        }
-
-        if (gap >= 5.0) {
-            return 95;
-        }
-
-        if (gap >= 2.0) {
-            return 93;
-        }
-
-        if (gap >= 0.0) {
-            return 90;
-        }
-
-        if (Double.isNaN(min)) {
-            return -1;
-        }
-
-        double gapFromMin = studentCutoff - min;
-
-        if (gapFromMin >= 0.0) {
-            double range = max - min;
-            if (range == 0.0) {
-                return 75;
-            }
-
-            double ratio = gapFromMin / range;
-            return (int) Math.round(70.0 + (ratio * 19.0));
-        }
-
-        double deficit = min - studentCutoff;
-
-        if (deficit <= 3.0) {
-            return (int) Math.round(50.0 + ((3.0 - deficit) / 3.0) * 19.0);
-        }
-
-        if (deficit <= 8.0) {
-            return (int) Math.round(30.0 + ((8.0 - deficit) / 5.0) * 19.0);
-        }
-
-        if (deficit <= 15.0) {
-            return (int) Math.round(30.0 + ((15.0 - deficit) / 15.0) * 9.0);
-        }
-
-        return -1;
     }
 
     private Map<String, College> buildCollegeLookup() {

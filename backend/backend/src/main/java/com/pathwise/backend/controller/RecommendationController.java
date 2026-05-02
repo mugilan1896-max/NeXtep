@@ -1,7 +1,9 @@
 package com.pathwise.backend.controller;
 
 import com.pathwise.backend.dto.CollegeOptionResponse;
+import com.pathwise.backend.dto.FinalReportResponse;
 import com.pathwise.backend.dto.RecommendationResponse;
+import com.pathwise.backend.service.CollegeScoringService;
 import com.pathwise.backend.service.RecommendationService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -16,9 +18,13 @@ import java.util.Map;
 public class RecommendationController {
 
     private final RecommendationService recommendationService;
+    private final CollegeScoringService collegeScoringService;
 
-    public RecommendationController(RecommendationService recommendationService) {
+    public RecommendationController(
+            RecommendationService recommendationService,
+            CollegeScoringService collegeScoringService) {
         this.recommendationService = recommendationService;
+        this.collegeScoringService = collegeScoringService;
     }
 
     @GetMapping("/districts")
@@ -81,6 +87,62 @@ public class RecommendationController {
                 );
 
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/final-report")
+    public ResponseEntity<FinalReportResponse> generateFinalReport(
+            @RequestBody Map<String, Object> requestBody) {
+
+        String studentName = readString(requestBody, "student_name");
+        String category = readString(requestBody, "category");
+        Double studentCutoff = readDouble(requestBody, "student_cutoff");
+        String preferredCourse = readString(requestBody, "preferred_course");
+        String district = readString(requestBody, "district");
+        Boolean hostelRequired = readBoolean(requestBody, "hostel_required");
+        List<String> preferredCollegeIds = readStringList(requestBody, "preferred_college_ids");
+        List<String> preferredCollegeNames = readStringList(requestBody, "preferred_college_names");
+
+        if (category == null || studentCutoff == null || preferredCourse == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                    FinalReportResponse.builder()
+                            .studentName(studentName)
+                            .studentCutoff(studentCutoff)
+                            .safeColleges(List.of())
+                            .targetColleges(List.of())
+                            .build()
+            );
+        }
+
+        FinalReportResponse report = collegeScoringService.generateFinalReport(
+                studentName,
+                category,
+                studentCutoff,
+                preferredCourse,
+                district,
+                hostelRequired,
+                preferredCollegeIds,
+                preferredCollegeNames
+        );
+
+        return ResponseEntity.ok(report);
+    }
+
+    private Boolean readBoolean(Map<String, Object> body, String snakeCaseKey) {
+        Object value = body.get(snakeCaseKey);
+        if (value == null) {
+            value = body.get(toCamelCase(snakeCaseKey));
+        }
+
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+
+        if (value instanceof String) {
+            String str = ((String) value).trim().toLowerCase();
+            return "true".equals(str) || "yes".equals(str) || "1".equals(str);
+        }
+
+        return false;
     }
 
     private String readString(Map<String, Object> body, String snakeCaseKey) {

@@ -8,6 +8,7 @@ import 'package:guidex/signup_page.dart';
 import 'package:guidex/user_category_page.dart';
 import 'package:guidex/screens/analysis_test_page.dart';
 import 'package:guidex/screens/analysis_results_page.dart';
+import 'package:guidex/screens/final_report_page.dart';
 import 'package:guidex/models/recommendation.dart';
 import 'package:guidex/models/recommendation_result.dart';
 
@@ -17,8 +18,6 @@ Future<void> main() async {
     if (Firebase.apps.isEmpty) {
       await Firebase.initializeApp();
     }
-
-    
   } catch (_) {
     // Continue to onboarding even if Firebase initialization fails.
   }
@@ -72,6 +71,29 @@ class MyApp extends StatelessWidget {
                     ?.whereType<Recommendation>()
                     .toList(),
             prefetchError: args?['prefetchError'] as String?,
+          );
+        },
+        AppRoutes.finalReport: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>?;
+
+          return FinalReportPage(
+            studentName: args?['studentName'] as String? ?? 'Student',
+            category: args?['category'] as String? ?? 'OC',
+            studentCutoff: (args?['studentCutoff'] as num?)?.toDouble() ?? 0,
+            preferredCourse: args?['preferredCourse'] as String? ?? '',
+            district: args?['district'] as String?,
+            hostelRequired: args?['hostelRequired'] as bool? ?? false,
+            preferredCollegeIds: (args?['preferredCollegeIds'] as List?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            preferredCollegeNames: (args?['preferredCollegeNames'] as List?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+            allRecommendations: args?['allRecommendations'] as List<Recommendation>?,
+            safeColleges: args?['safeColleges'] as List<Recommendation>?,
           );
         },
       },

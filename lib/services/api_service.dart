@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:guidex/models/college_option.dart';
+import 'package:guidex/models/final_report_response.dart';
 import 'package:guidex/models/recommendation.dart';
 import 'package:guidex/models/recommendation_result.dart';
 import 'package:http/http.dart' as http;
@@ -447,6 +448,71 @@ class ApiService {
     return const [];
   }
 
+  Future<FinalReportResponse> getFinalReport({
+    required String studentName,
+    required String category,
+    required double studentCutoff,
+    required String preferredCourse,
+    String? district,
+    bool hostelRequired = false,
+    List<String> preferredCollegeIds = const [],
+    List<String> preferredCollegeNames = const [],
+  }) async {
+    final requestBody = {
+      'student_name': studentName,
+      'category': category,
+      'student_cutoff': studentCutoff,
+      'preferred_course': preferredCourse,
+      'district': district ?? 'Any',
+      'hostel_required': hostelRequired,
+      'preferred_college_ids': preferredCollegeIds,
+      'preferred_college_names': preferredCollegeNames,
+    };
+
+    Object? lastError;
+
+    for (final base in _orderedBaseCandidates()) {
+      final uri = _buildUri(base, '/api/final-report');
+      debugPrint('Final report request URL: $uri');
+
+      try {
+        final timeout = _timeoutForBase(base, path: '/api/final-report');
+        final response = await http
+            .post(
+              uri,
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode(requestBody),
+            )
+            .timeout(timeout);
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          _preferredBaseUrl = _normalizeBaseUrl(base);
+          return FinalReportResponse.fromJson(decoded);
+        }
+
+        lastError = Exception(
+          'Final report API failed with status ${response.statusCode}',
+        );
+      } on TimeoutException catch (error) {
+        lastError = error;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    debugPrint('Failed to fetch final report. Last error: $lastError');
+    return FinalReportResponse(
+      studentName: studentName,
+      studentCutoff: studentCutoff,
+      studentCategory: category,
+      preferredCourse: preferredCourse,
+      hostelRequired: hostelRequired,
+      safeColleges: [],
+      targetColleges: [],
+    );
+  }
+
   Future<List<String>> getDistricts() async {
     final cached = _cachedDistricts;
     if (cached != null && cached.isNotEmpty) {
@@ -669,8 +735,9 @@ class ApiService {
         // Strategy 2: One starts with the other (handles name truncation/extras).
         // Minimum 15 chars to prevent short names like 'mit' from matching.
         if (token.length >= 15 && collegeToken.startsWith(token)) return true;
-        if (collegeToken.length >= 15 && token.startsWith(collegeToken))
+        if (collegeToken.length >= 15 && token.startsWith(collegeToken)) {
           return true;
+        }
 
         // Strategy 3: Significant substring overlap (one contains the other).
         // Both must be substantial (>=20 chars) and shorter >= 50% of longer.
@@ -721,8 +788,9 @@ class ApiService {
       // Apply district filter ONLY to safe colleges.
       if (districtToken != null && districtToken.isNotEmpty) {
         final itemDistrict = _normalizeToken(item.district ?? '');
-        if (itemDistrict.isEmpty)
+        if (itemDistrict.isEmpty) {
           return true; // Include if college has no district info.
+        }
         return itemDistrict.contains(districtToken) ||
             districtToken.contains(itemDistrict);
       }
