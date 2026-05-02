@@ -9,7 +9,7 @@ import 'package:guidex/models/recommendation_result.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  static const String _androidEmulatorBaseUrl = 'http://10.0.2.2:8080';
+  static const String _androidEmulatorBaseUrl = 'http://10.0.2.2:8081';
 
   static const String _cloudRunBaseUrl = String.fromEnvironment(
     'CLOUD_API_BASE_URL',
@@ -47,14 +47,14 @@ class ApiService {
     }
 
     if (kIsWeb) {
-      candidates.add('http://localhost:8080');
+      candidates.add('http://localhost:8081');
       candidates.add(_cloudRunBaseUrl);
       return candidates;
     }
 
     if (defaultTargetPlatform == TargetPlatform.android) {
       candidates.add(_androidEmulatorBaseUrl);
-      candidates.add('http://$_realDeviceHost:8080');
+      candidates.add('http://$_realDeviceHost:8081');
       candidates.add(_cloudRunBaseUrl);
       return candidates;
     }

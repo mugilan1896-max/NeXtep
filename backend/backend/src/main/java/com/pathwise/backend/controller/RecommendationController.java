@@ -95,6 +95,23 @@ public class RecommendationController {
                 cutoff, normalizedCommunity, preferred_city, preferred_course, hostel_required, preferred_colleges));
     }
 
+    @PostMapping("/final-report")
+    public ResponseEntity<com.pathwise.backend.dto.FinalReportResponse> generateFinalReport(
+            @RequestBody com.pathwise.backend.dto.FinalReportRequest request) {
+        
+        // Basic validation
+        if (request.getCategory() == null || request.getStudent_cutoff() == null) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        String normalizedCommunity = request.getCategory().toLowerCase(Locale.ROOT);
+        if (!VALID_COMMUNITIES.contains(normalizedCommunity)) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();
+        }
+
+        return ResponseEntity.ok(recommendationService.generateFinalReport(request));
+    }
+
     @GetMapping("/test-db")
     public ResponseEntity<?> testDb() {
         try {

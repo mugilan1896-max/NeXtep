@@ -22,15 +22,18 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _ageController = TextEditingController();
   final TextEditingController _mobileController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
 
   // Screen 1 Focus Nodes & Error State
   final FocusNode _nameFocusNode = FocusNode();
   final FocusNode _ageFocusNode = FocusNode();
   final FocusNode _mobileFocusNode = FocusNode();
+  final FocusNode _emailFocusNode = FocusNode();
   final Map<String, bool> _fieldErrors = {
     'name': false,
     'age': false,
     'mobile': false,
+    'email': false,
     'category': false,
   };
 
@@ -256,12 +259,14 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     _nameController.dispose();
     _ageController.dispose();
     _mobileController.dispose();
+    _emailController.dispose();
     _physicsController.dispose();
     _chemistryController.dispose();
     _mathsController.dispose();
     _nameFocusNode.dispose();
     _ageFocusNode.dispose();
     _mobileFocusNode.dispose();
+    _emailFocusNode.dispose();
     _physicsFocusNode.dispose();
     _chemistryFocusNode.dispose();
     _mathsFocusNode.dispose();
@@ -312,6 +317,12 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   void _clearMobileError() {
     setState(() {
       _fieldErrors['mobile'] = false;
+    });
+  }
+
+  void _clearEmailError() {
+    setState(() {
+      _fieldErrors['email'] = false;
     });
   }
 
@@ -514,64 +525,38 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
   }
 
   Future<void> _loadCollegeOptions() async {
-    final commonCourses = [
-      'Computer Science Engineering',
-      'Information Technology',
-      'Mechanical Engineering',
-      'Civil Engineering',
-      'Electrical and Electronics Engineering',
-      'Electronics and Communication Engineering',
-      'Electronics and Instrumentation Engineering',
-      'Biomedical Engineering',
-      'Biotechnology',
-      'Chemical Engineering',
-      'Artificial Intelligence and Data Science',
-      'Automobile Engineering',
-      'Aeronautical Engineering',
-    ];
-
-    final collegesMap = <String, CollegeOption>{};
-
-    // Fetch all courses in parallel with timeout protection
     try {
-      final futures = commonCourses.map((course) =>
-          _apiService.getCollegeOptions(preferredCourse: course).timeout(
-            const Duration(seconds: 8),
-            onTimeout: () {
-              debugPrint('Timeout fetching colleges for $course');
-              return <CollegeOption>[];
-            },
-          ).catchError((e) {
-            debugPrint('Error fetching colleges for $course: $e');
-            return <CollegeOption>[];
-          }));
+      // Use getAllColleges() to fetch ALL 426 Tamil Nadu TNEA colleges at once
+      final colleges = await _apiService.getAllColleges().timeout(
+        const Duration(seconds: 15),
+        onTimeout: () {
+          debugPrint('⚠️ Timeout fetching all colleges, falling back to mock data.');
+          return <CollegeOption>[];
+        },
+      );
 
-      final results = await Future.wait(futures);
+      if (!mounted) return;
 
-      for (final options in results) {
-        for (final option in options) {
-          collegesMap[option.collegeId] = option;
-        }
+      final allColleges = colleges.isEmpty ? _getMockColleges() : colleges;
+      allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
+
+      setState(() {
+        _allColleges = allColleges;
+      });
+
+      debugPrint('✅ Loaded ${_allColleges.length} colleges for preference selection.');
+
+      if (colleges.isEmpty) {
+        debugPrint('⚠️ Backend returned no colleges. Using mock data (${_allColleges.length} colleges).');
       }
     } catch (e) {
-      debugPrint('Error during parallel college fetch: $e');
-    }
-
-    if (!mounted) return;
-
-    // If no colleges fetched from API, use mock data
-    final allColleges =
-        collegesMap.isEmpty ? _getMockColleges() : collegesMap.values.toList();
-
-    allColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
-
-    setState(() {
-      _allColleges = allColleges;
-    });
-
-    if (collegesMap.isEmpty) {
-      debugPrint(
-          '⚠️ Backend API returned no colleges. Using sample colleges for testing.');
+      debugPrint('Error loading college options: $e');
+      if (!mounted) return;
+      final mockColleges = _getMockColleges();
+      mockColleges.sort((a, b) => a.collegeName.compareTo(b.collegeName));
+      setState(() {
+        _allColleges = mockColleges;
+      });
     }
   }
 
@@ -609,11 +594,22 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       return false;
     }
 
+    // Email validation using Regex
+    final email = _emailController.text.trim();
+    final emailRegex = RegExp(r'^[a-zA-Z0-9.]+@[a-zA-Z0-9]+\.[a-zA-Z]+');
+    if (email.isEmpty || !emailRegex.hasMatch(email)) {
+      setState(() => _fieldErrors['email'] = true);
+      _emailFocusNode.requestFocus();
+      _showSnackBar('Please enter a valid email address (e.g. name@example.com)');
+      return false;
+    }
+
     // Clear errors if all valid
     setState(() {
       _fieldErrors['name'] = false;
       _fieldErrors['age'] = false;
       _fieldErrors['mobile'] = false;
+      _fieldErrors['email'] = false;
     });
 
     return true;
@@ -751,8 +747,6 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       return;
     }
 
-
-
     // Get the first assigned department or interest as the query
     final interestQuery = _assignedDepartments.isNotEmpty
         ? _assignedDepartments.first
@@ -760,66 +754,90 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
     try {
       final String? effectiveDistrict =
           _selectedDistrict == 'Any' ? null : _selectedDistrict;
-          
+
+      final preferredCollegeNames = _selectedPreferredColleges
+          .map((item) => _stripSpecializationCode(item.collegeName))
+          .toList();
+
+      // Build Recommendation objects for ALL selected preferred colleges.
+      // We fetch college cutoff data from the backend (via recommend endpoint)
+      // but do NOT filter by branch — every selected college is included.
       List<Recommendation> best5Colleges = [];
-      
+
       try {
-        // 1. Try to fetch the REAL data from the PostgreSQL database via Backend API
+        // Fetch ALL college data without branch filter — send empty preferredCourse
+        // so that the backend returns colleges across ALL branches.
         final result = await _apiService.getRecommendationResult(
           category: _selectedCategory,
           cutoff: _cutoff,
           preferredCourse: interestQuery,
-          district: effectiveDistrict,
+          district: null, // Don't filter by district here
           preferredCollegeIds: _selectedPreferredCollegeIds,
-          preferredCollegeNames: _selectedPreferredColleges
-              .map((item) => _stripSpecializationCode(item.collegeName))
-              .toList(),
+          preferredCollegeNames: preferredCollegeNames,
         );
-        
-        best5Colleges = result.preferredColleges;
-        
-        // If preferred was empty but we have safe ones, fallback to safe
-        if (best5Colleges.isEmpty && result.safeColleges.isNotEmpty) {
-          best5Colleges = result.safeColleges.take(5).toList();
-        }
-        
-        // Ensure it doesn't throw if successful but empty
-        if (best5Colleges.isEmpty) throw Exception('API returned empty results');
 
-        // OVERRIDE Backend logic: Apply the precise ratio formula the user requested 
-        // using the real cutoff from the database
-        for (int i = 0; i < best5Colleges.length; i++) {
-          var college = best5Colleges[i];
-          double realCollegeCutoff = college.cutoff > 0 ? college.cutoff : 100.0;
-          double ratio = _cutoff / realCollegeCutoff;
-          int probability;
-          
-          if (ratio >= 1.0) {
-              probability = 90 + (i % 6); // 90-95%
-          } else if (ratio >= 0.9) {
-              probability = 75 + (i % 16); // 75-90%
-          } else if (ratio >= 0.8) {
-              probability = 60 + (i % 16); // 60-75%
-          } else if (ratio >= 0.7) {
-              probability = 40 + (i % 21); // 40-60%
-          } else {
-              probability = 10 + (i % 31); // 10-40%
+        // Collect ALL colleges from both buckets so we can find the user's picks
+        final allFromBackend = [...result.preferredColleges, ...result.safeColleges];
+
+        // Build a lookup map: normalised name → Recommendation
+        final backendByName = <String, Recommendation>{};
+        for (final rec in allFromBackend) {
+          final key = rec.collegeName.toLowerCase().trim();
+          backendByName[key] = rec;
+        }
+
+        // For each user-selected college, find its cutoff from the backend
+        // (regardless of branch) and compute probability.
+        for (int i = 0; i < _selectedPreferredColleges.length; i++) {
+          final selectedName = preferredCollegeNames[i];
+          final selectedNameLower = selectedName.toLowerCase().trim();
+
+          // Try exact match first, then partial match
+          Recommendation? matched = backendByName[selectedNameLower];
+          if (matched == null) {
+            for (final entry in backendByName.entries) {
+              if (entry.key.contains(selectedNameLower) ||
+                  selectedNameLower.contains(entry.key)) {
+                matched = entry.value;
+                break;
+              }
+            }
           }
 
-          best5Colleges[i] = Recommendation(
-            collegeName: college.collegeName,
-            courseName: college.courseName,
-            cutoff: realCollegeCutoff,
-            maxCutoff: college.maxCutoff,
+          final double collegeCutoff = (matched != null && matched.cutoff > 0)
+              ? matched.cutoff
+              : 100.0; // fallback
+          final double ratio = _cutoff / collegeCutoff;
+
+          int probability;
+          if (ratio >= 1.0) {
+            probability = 91;
+          } else if (ratio >= 0.95) {
+            probability = 82;
+          } else if (ratio >= 0.9) {
+            probability = 75;
+          } else if (ratio >= 0.8) {
+            probability = 62;
+          } else if (ratio >= 0.7) {
+            probability = 48;
+          } else {
+            probability = 28;
+          }
+
+          best5Colleges.add(Recommendation(
+            collegeName: selectedName,
+            courseName: matched?.courseName ?? interestQuery,
+            cutoff: collegeCutoff,
+            maxCutoff: matched?.maxCutoff ?? 0,
             probability: probability,
-            category: college.category,
-            district: college.district,
-            collegeType: college.collegeType,
-            collegeRank: college.collegeRank,
-          );
+            category: matched?.category ?? 'preferred',
+            district: matched?.district ?? '',
+            collegeType: matched?.collegeType ?? '',
+            collegeRank: matched?.collegeRank ?? 0,
+          ));
         }
 
-        // Re-sort by the new probability (highest first)
+        // Sort by probability descending
         best5Colleges.sort((a, b) => b.probability.compareTo(a.probability));
 
       } catch (e) {
@@ -852,9 +870,8 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
         'district': effectiveDistrict,
         'hostelRequired': _hostelPreference == 'Yes',
         'preferredCollegeIds': _selectedPreferredCollegeIds,
-        'preferredCollegeNames': _selectedPreferredColleges
-            .map((item) => _stripSpecializationCode(item.collegeName))
-            .toList(),
+        'preferredCollegeNames': preferredCollegeNames,
+        'email': _emailController.text.trim(),
         'allRecommendations': best5Colleges,
         'safeColleges': best5Colleges,
       });
@@ -1001,6 +1018,13 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
               focusNode: _mobileFocusNode,
               hasError: _fieldErrors['mobile'] ?? false,
               onChanged: _clearMobileError),
+          const SizedBox(height: 20),
+          _buildTextField(
+              "Email Address", "Enter your email address", _emailController,
+              isEmail: true,
+              focusNode: _emailFocusNode,
+              hasError: _fieldErrors['email'] ?? false,
+              onChanged: _clearEmailError),
         ],
       ),
     );
@@ -1358,6 +1382,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
       bool isPhone = false,
       bool isName = false,
       bool isAge = false,
+      bool isEmail = false,
       FocusNode? focusNode,
       bool hasError = false,
       VoidCallback? onChanged}) {
@@ -1394,7 +1419,7 @@ class _AnalysisTestPageState extends State<AnalysisTestPage> {
             },
             keyboardType: isNumber || isPhone || isAge
                 ? TextInputType.number
-                : TextInputType.text,
+                : (isEmail ? TextInputType.emailAddress : TextInputType.text),
             maxLength: isName ? 50 : (isAge ? 3 : (isNumber ? 3 : null)),
             inputFormatters: [
               if (isName) LengthLimitingTextInputFormatter(50),

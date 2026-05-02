@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:guidex/models/recommendation.dart';
+import 'package:guidex/models/final_report_response.dart';
+import 'package:guidex/services/api_service.dart';
+import 'package:guidex/services/report_export_service.dart';
 
 class FinalReportPage extends StatefulWidget {
   final String studentName;
@@ -32,14 +35,242 @@ class FinalReportPage extends StatefulWidget {
 }
 
 class _FinalReportPageState extends State<FinalReportPage> {
-
+  final GlobalKey _reportKey = GlobalKey();
 
   late List<Recommendation> _filteredSafeColleges;
+  bool _isLoading = true;
+  FinalReportResponse? _finalReportResponse;
+  // Client-side computed target colleges (fallback when backend returns empty)
+  List<TargetCollegeResponse> _clientSideTargetColleges = [];
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
     _filteredSafeColleges = _generateSafeColleges();
+    _loadFinalReport();
+  }
+
+  /// Returns the target colleges to display:
+  /// Prefers backend data; falls back to client-side computed list.
+  List<TargetCollegeResponse> get _effectiveTargetColleges {
+    final backendList = _finalReportResponse?.targetColleges ?? [];
+    if (backendList.isNotEmpty) return backendList;
+    return _clientSideTargetColleges;
+  }
+
+  Future<void> _loadFinalReport() async {
+    try {
+      final response = await ApiService().getFinalReport(
+        studentName: widget.studentName,
+        category: widget.category,
+        studentCutoff: widget.studentCutoff,
+        preferredCourse: widget.preferredCourse,
+        district: widget.district,
+        hostelRequired: widget.hostelRequired,
+        preferredCollegeIds: widget.preferredCollegeIds,
+        preferredCollegeNames: widget.preferredCollegeNames,
+      );
+
+      // If backend returned no target colleges, compute client-side
+      List<TargetCollegeResponse> clientTargets = [];
+      if (response.targetColleges.isEmpty) {
+        debugPrint('Backend returned 0 target colleges → computing client-side...');
+        clientTargets = await _computeTargetCollegesClientSide();
+        debugPrint('Client-side computed ${clientTargets.length} target colleges.');
+      }
+
+      if (mounted) {
+        setState(() {
+          _finalReportResponse = response;
+          _clientSideTargetColleges = clientTargets;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      // Even if backend fails, try client-side
+      final clientTargets = await _computeTargetCollegesClientSide();
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString();
+          _clientSideTargetColleges = clientTargets;
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _downloadAsPDF() async {
+    await ReportExportService.exportToPDF(
+      studentName: widget.studentName,
+      studentCutoff: widget.studentCutoff,
+      category: widget.category,
+      preferredCourse: widget.preferredCourse,
+      safeColleges: _preferredCollegesForDisplay,
+      targetColleges: _effectiveTargetColleges,
+    );
+  }
+
+  Future<void> _downloadAsPNG() async {
+    await ReportExportService.exportToPNG(
+      boundaryKey: _reportKey,
+      fileName: '${widget.studentName}_Report_Summary',
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // CLIENT-SIDE TARGET COLLEGE ALGORITHM
+  // Exact formula as specified:
+  //   finalScore = 0.4×cutoff + 0.2×location + 0.15×interest
+  //              + 0.1×hostel + 0.1×category + 0.05×preference
+  //   Filter: finalScore >= 0.55  (NO upper cap)
+  //   Sort by finalScore DESC, take top 15
+  // ════════════════════════════════════════════════════════════════════════
+  Future<List<TargetCollegeResponse>> _computeTargetCollegesClientSide() async {
+    try {
+      // Fetch all colleges the student qualifies for (with their cutoffs)
+      final result = await ApiService().getRecommendationResult(
+        category: widget.category,
+        cutoff: widget.studentCutoff,
+        preferredCourse: widget.preferredCourse,
+        district: null, // No district filter — we want all colleges
+        preferredCollegeIds: widget.preferredCollegeIds,
+        preferredCollegeNames: widget.preferredCollegeNames,
+      );
+
+      final allColleges = [
+        ...result.safeColleges,
+        ...result.preferredColleges,
+      ];
+
+      if (allColleges.isEmpty) return [];
+
+      final preferredNamesLower = widget.preferredCollegeNames
+          .map((n) => n.toLowerCase().trim())
+          .toList();
+
+      final scored = <_ScoredCollege>[];
+
+      for (final college in allColleges) {
+        final collegeCutoff = college.cutoff > 0 ? college.cutoff : 100.0;
+        final studentCutoff = widget.studentCutoff;
+
+        // ── 1. CUTOFF SCORE (40%) ──────────────────────────────────────
+        final ratio = studentCutoff / collegeCutoff;
+        double cutoffScore;
+        if (ratio >= 1.0)       cutoffScore = 1.0;
+        else if (ratio >= 0.85) cutoffScore = ratio;
+        else if (ratio >= 0.7)  cutoffScore = ratio * 0.8;
+        else                    cutoffScore = ratio * 0.5;
+
+        // ── 2. LOCATION SCORE (20%) ────────────────────────────────────
+        double locationScore;
+        final prefDistrict = widget.district?.trim().toLowerCase() ?? '';
+        final colDistrict  = (college.district ?? '').trim().toLowerCase();
+        if (prefDistrict.isEmpty) {
+          locationScore = 1.0; // No preference → no penalty
+        } else if (colDistrict == prefDistrict ||
+                   colDistrict.contains(prefDistrict) ||
+                   prefDistrict.contains(colDistrict)) {
+          locationScore = 1.0; // Exact / nearby match
+        } else {
+          locationScore = 0.3; // No match
+        }
+
+        // ── 3. INTEREST SCORE (15%) ────────────────────────────────────
+        double interestScore;
+        final prefCourse = widget.preferredCourse.trim().toLowerCase();
+        final colCourse  = college.courseName.trim().toLowerCase();
+        if (colCourse == prefCourse || colCourse.contains(prefCourse) ||
+            prefCourse.contains(colCourse)) {
+          interestScore = 1.0; // Exact match
+        } else if (_courseRelated(prefCourse, colCourse)) {
+          interestScore = 0.7; // Related
+        } else {
+          interestScore = 0.2; // No match
+        }
+
+        // ── 4. HOSTEL SCORE (10%) ──────────────────────────────────────
+        // We don't have hostel availability in the API,
+        // so assume available for colleges with hostel pref.
+        double hostelScore = widget.hostelRequired ? 1.0 : 0.5;
+
+        // ── 5. CATEGORY SCORE (10%) ────────────────────────────────────
+        // Already filtered by category in the API call → always 1.0
+        const double categoryScore = 1.0;
+
+        // ── 6. PREFERENCE BOOST (5%) ───────────────────────────────────
+        final colNameLower = college.collegeName.toLowerCase().trim();
+        final isPreferred = preferredNamesLower.any((p) =>
+            p.isNotEmpty &&
+            (colNameLower.contains(p) || p.contains(colNameLower)));
+        final double prefScore = isPreferred ? 1.0 : 0.0;
+
+        // ── FINAL WEIGHTED SCORE ───────────────────────────────────────
+        final finalScore = (0.40 * cutoffScore) +
+                           (0.20 * locationScore) +
+                           (0.15 * interestScore) +
+                           (0.10 * hostelScore) +
+                           (0.10 * categoryScore) +
+                           (0.05 * prefScore);
+
+        final probability = finalScore * 100.0;
+
+        // ── FILTER: 0.55 to 0.85 ──────────────────────────────────────
+        if (finalScore >= 0.55 && finalScore <= 0.85) {
+          String label;
+          if (probability >= 80)      label = 'Strong';
+          else if (probability >= 65) label = 'Moderate';
+          else                        label = 'Dream';
+
+          scored.add(_ScoredCollege(
+            finalScore: finalScore,
+            response: TargetCollegeResponse(
+              collegeName:    college.collegeName,
+              course:         college.courseName,
+              scorePercentage: double.parse(probability.toStringAsFixed(2)),
+              district:       college.district ?? '',
+              chanceLabel:    label,
+              cutoffScore:    double.parse(cutoffScore.toStringAsFixed(2)),
+              locationScore:  double.parse(locationScore.toStringAsFixed(2)),
+              interestScore:  double.parse(interestScore.toStringAsFixed(2)),
+              hostelScore:    double.parse(hostelScore.toStringAsFixed(2)),
+              categoryScore:  double.parse(categoryScore.toStringAsFixed(2)),
+              preferenceBonus: prefScore,
+            ),
+          ));
+        }
+      }
+
+      // Sort DESC by finalScore, take top 15
+      scored.sort((a, b) => b.finalScore.compareTo(a.finalScore));
+      return scored.take(15).map((s) => s.response).toList();
+    } catch (e) {
+      debugPrint('Client-side target college computation failed: $e');
+      return [];
+    }
+  }
+
+  /// Returns true if two course strings are related (e.g. CSE ↔ Computer Science)
+  bool _courseRelated(String pref, String actual) {
+    const aliases = <String, List<String>>{
+      'computer science engineering':         ['cse', 'computer science', 'cs'],
+      'information technology':               ['it'],
+      'electronics and communication':        ['ece', 'ec'],
+      'electrical and electronics':           ['eee', 'ee'],
+      'mechanical engineering':               ['me', 'mech'],
+      'artificial intelligence and data science': ['ai', 'aids', 'ad', 'ai ds'],
+      'civil engineering':                    ['ce', 'civil'],
+      'biomedical engineering':               ['bme', 'bio'],
+      'biotechnology':                        ['bt', 'bio'],
+    };
+    for (final entry in aliases.entries) {
+      final variants = [entry.key, ...entry.value];
+      final prefMatches   = variants.any((v) => pref.contains(v) || v.contains(pref));
+      final actualMatches = variants.any((v) => actual.contains(v) || v.contains(actual));
+      if (prefMatches && actualMatches) return true;
+    }
+    return false;
   }
 
   List<Recommendation> _generateSafeColleges() {
@@ -55,6 +286,20 @@ class _FinalReportPageState extends State<FinalReportPage> {
     return filtered.take(5).toList();
   }
 
+  /// Returns preferred colleges for display.
+  /// Prefers the locally-passed list; if empty, falls back to backend safeColleges.
+  List<dynamic> get _preferredCollegesForDisplay {
+    if (_filteredSafeColleges.isNotEmpty) {
+      return _filteredSafeColleges;
+    }
+    // Fallback: use backend's safe colleges (which are the preferred colleges from final-report)
+    if (_finalReportResponse != null &&
+        _finalReportResponse!.safeColleges.isNotEmpty) {
+      return _finalReportResponse!.safeColleges;
+    }
+    return [];
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -64,22 +309,112 @@ class _FinalReportPageState extends State<FinalReportPage> {
         elevation: 0,
         backgroundColor: const Color(0xFF4F46E5),
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Student Profile Header
-              _buildStudentHeader(),
-              const SizedBox(height: 24),
+      body: _isLoading 
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: RepaintBoundary(
+                key: _reportKey,
+                child: Container(
+                  color: Colors.grey.shade50, // Background for screenshot
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Student Profile Header
+                      _buildStudentHeader(),
+                      const SizedBox(height: 24),
 
-              // Safe Colleges Section
-              _buildSafeCollegesSection(),
-              const SizedBox(height: 16),
+                      // Safe Colleges Section
+                      _buildSafeCollegesSection(),
+                      const SizedBox(height: 16),
+                      
+                      if (_errorMessage != null)
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          color: Colors.red.shade50,
+                          child: Text(
+                            'Failed to load target colleges: $_errorMessage',
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
+                      
+                      // Target Colleges Section
+                      _buildTargetCollegesSection(),
+                      const SizedBox(height: 24),
+
+                      // Download Section
+                      _buildDownloadSection(),
+                      const SizedBox(height: 32),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+    );
+  }
+
+  Widget _buildDownloadSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.download, color: Color(0xFF4F46E5)),
+              SizedBox(width: 12),
+              Text(
+                'Download Your Report',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF111827),
+                ),
+              ),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            'Save your personalized recommendation report for future reference.',
+            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: _downloadAsPDF,
+                  icon: const Icon(Icons.picture_as_pdf),
+                  label: const Text('PDF Report'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _downloadAsPNG,
+                  icon: const Icon(Icons.image),
+                  label: const Text('PNG Image'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF4F46E5),
+                    side: const BorderSide(color: Color(0xFF4F46E5)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -211,6 +546,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
   }
 
   Widget _buildSafeCollegesSection() {
+    final colleges = _preferredCollegesForDisplay;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -237,7 +573,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
                   ),
                 ),
                 Text(
-                  'Top ${_filteredSafeColleges.length} preferred colleges based on your chances',
+                  'Top ${colleges.length} preferred colleges based on your chances',
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey.shade600,
@@ -248,7 +584,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
           ],
         ),
         const SizedBox(height: 16),
-        if (_filteredSafeColleges.isEmpty)
+        if (colleges.isEmpty)
           Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
@@ -268,10 +604,15 @@ class _FinalReportPageState extends State<FinalReportPage> {
           )
         else
           Column(
-            children: _filteredSafeColleges.asMap().entries.map((entry) {
+            children: colleges.asMap().entries.map((entry) {
               final index = entry.key;
               final college = entry.value;
-              return _buildCollegeCard(college, index + 1);
+              if (college is Recommendation) {
+                return _buildCollegeCard(college, index + 1);
+              } else if (college is SafeCollegeResponse) {
+                return _buildSafeCollegeCard(college, index + 1);
+              }
+              return const SizedBox.shrink();
             }).toList(),
           ),
       ],
@@ -386,6 +727,322 @@ class _FinalReportPageState extends State<FinalReportPage> {
     );
   }
 
+  /// Card for SafeCollegeResponse (from backend /api/final-report safeColleges list)
+  Widget _buildSafeCollegeCard(SafeCollegeResponse college, int rank) {
+    final double prob = college.probability;
+    String chanceText;
+    if (prob >= 90) {
+      chanceText = 'Excellent';
+    } else if (prob >= 75) {
+      chanceText = 'Strong';
+    } else if (prob >= 60) {
+      chanceText = 'Moderate';
+    } else if (prob >= 40) {
+      chanceText = 'Low';
+    } else {
+      chanceText = 'Very Low';
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Center(
+              child: Text(
+                '#$rank',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  college.collegeName,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1F2937),
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  college.course,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '🎯 Chance: ${prob.toStringAsFixed(0)}% ($chanceText)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: prob >= 75
+                        ? Colors.green.shade700
+                        : (prob >= 60 ? Colors.orange.shade700 : Colors.red.shade700),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      '📊 Your cutoff: ${widget.studentCutoff.toStringAsFixed(1)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                    Text(
+                      '📉 College cutoff: ${college.collegeCutoff.toStringAsFixed(1)}',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTargetCollegesSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 4,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.orange.shade500,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Target Colleges',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+                Text(
+                  'Top 15 additional colleges matching your profile',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        // If the backend has not populated the targetColleges list (or it's null/empty)
+        if (_effectiveTargetColleges.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: Center(
+              child: Text(
+                _isLoading
+                    ? 'Computing target colleges...'
+                    : 'No additional target colleges found.',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          )
+        else
+          Column(
+            children: _effectiveTargetColleges.asMap().entries.map((entry) {
+              final index = entry.key;
+              final college = entry.value;
+              return _buildTargetCollegeCard(college, index + 1);
+            }).toList(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTargetCollegeCard(TargetCollegeResponse college, int rank) {
+    // Determine color based on chanceLabel
+    Color statusColor;
+    if (college.chanceLabel == 'Strong') {
+      statusColor = Colors.green.shade600;
+    } else if (college.chanceLabel == 'Moderate') {
+      statusColor = Colors.orange.shade600;
+    } else if (college.chanceLabel == 'Competitive') {
+      statusColor = Colors.blue.shade600;
+    } else {
+      statusColor = Colors.purple.shade600;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Rank Badge
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Center(
+                  child: Text(
+                    '#$rank',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              // College Header
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      college.collegeName,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF1F2937),
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      college.course,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              // Status Label
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  college.chanceLabel,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: statusColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const Divider(height: 1),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildScoreMetric('Probability', '${college.scorePercentage}%', Icons.analytics),
+              _buildScoreMetric('Cutoff Match', '${(college.cutoffScore * 100).toInt()}%', Icons.trending_up),
+              _buildScoreMetric('Location', '${(college.locationScore * 100).toInt()}%', Icons.location_on),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScoreMetric(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: Colors.grey.shade500),
+        const SizedBox(width: 4),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+            ),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   String _getShortCourseName(String course) {
     const courseMap = {
       'Computer Science Engineering': 'CSE',
@@ -401,4 +1058,11 @@ class _FinalReportPageState extends State<FinalReportPage> {
     };
     return courseMap[course] ?? course.substring(0, 3).toUpperCase();
   }
+}
+
+// ── Private helper for sorting during client-side computation ──────────────
+class _ScoredCollege {
+  final double finalScore;
+  final TargetCollegeResponse response;
+  const _ScoredCollege({required this.finalScore, required this.response});
 }

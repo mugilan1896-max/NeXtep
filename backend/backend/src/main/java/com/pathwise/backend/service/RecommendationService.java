@@ -113,6 +113,169 @@ public class RecommendationService {
     }
 
     // ========================================================================
+    // FINAL REPORT ENDPOINT: Generates top 5 Safe (Preferred) + 15 Target
+    // ========================================================================
+    @Transactional(readOnly = true)
+    public com.pathwise.backend.dto.FinalReportResponse generateFinalReport(com.pathwise.backend.dto.FinalReportRequest request) {
+        String comm = request.getCategory() != null ? request.getCategory().toLowerCase(Locale.ROOT) : "";
+        List<Object[]> rows = cutoffHistoryRepository.findTargetColleges(comm);
+
+        Double studentCutoff = request.getStudent_cutoff() != null ? request.getStudent_cutoff() : 0.0;
+        String preferredCourse = request.getPreferred_course() != null ? request.getPreferred_course() : "";
+        String preferredDistrict = request.getDistrict() != null ? request.getDistrict() : "";
+        boolean hostelRequired = request.getHostel_required() != null ? request.getHostel_required() : false;
+        List<String> preferredCollegeNames = request.getPreferred_college_names() != null ? request.getPreferred_college_names() : new ArrayList<>();
+
+        List<com.pathwise.backend.dto.FinalReportResponse.SafeCollegeResponse> safeColleges = new ArrayList<>();
+        List<com.pathwise.backend.dto.FinalReportResponse.TargetCollegeResponse> targetColleges = new ArrayList<>();
+
+        for (Object[] row : rows) {
+            String collegeName = String.valueOf(row[0]);
+            String branchName = String.valueOf(row[1]);
+            Double collegeCutoff = convertToDouble(row[2]);
+            String city = String.valueOf(row[3]);
+            String district = String.valueOf(row[4]);
+            String branchCode = String.valueOf(row[5]);
+
+            if (collegeCutoff == null || collegeCutoff <= 0) continue;
+
+            // --- Check if preferred ---
+            boolean isPreferred = false;
+            if (preferredCollegeNames != null) {
+                for (String pref : preferredCollegeNames) {
+                    if (collegeName.toLowerCase().contains(pref.toLowerCase()) || pref.toLowerCase().contains(collegeName.toLowerCase())) {
+                        isPreferred = true;
+                        break;
+                    }
+                }
+            }
+
+            // ⭐ 1. SAFE COLLEGES (Top 5 based on User Preferences)
+            if (isPreferred) {
+                double probability = calculateProbability(studentCutoff, collegeCutoff);
+                String chanceLabel = getProbabilityLabel(probability);
+
+                safeColleges.add(com.pathwise.backend.dto.FinalReportResponse.SafeCollegeResponse.builder()
+                        .collegeName(collegeName)
+                        .course(branchName)
+                        .collegeCutoff(collegeCutoff)
+                        .chanceLabel(chanceLabel)
+                        .probability(Math.round(probability * 100.0) / 100.0)
+                        .district(district)
+                        .build());
+            }
+
+            // 🎯 2. TARGET COLLEGES (15 with new specific algorithm)
+            // 1. Cutoff Score
+            double ratio = studentCutoff / collegeCutoff;
+            double cutoffScore;
+            if (ratio >= 1.0) cutoffScore = 1.0;
+            else if (ratio >= 0.85) cutoffScore = ratio;
+            else if (ratio >= 0.7) cutoffScore = ratio * 0.8;
+            else cutoffScore = ratio * 0.5;
+
+            // 2. Location Score
+            double locationScore = 0.3;
+            if (!preferredDistrict.isEmpty() && !preferredDistrict.equalsIgnoreCase("any")) {
+                String prefDistLower = preferredDistrict.toLowerCase();
+                String actDistLower = district != null ? district.toLowerCase() : "";
+                String actCityLower = city != null ? city.toLowerCase() : "";
+
+                if (actDistLower.equals(prefDistLower) || actCityLower.equals(prefDistLower)) {
+                    locationScore = 1.0; // exactMatch
+                } else if (actDistLower.contains(prefDistLower) || actCityLower.contains(prefDistLower)
+                        || prefDistLower.contains(actDistLower) || prefDistLower.contains(actCityLower)) {
+                    locationScore = 0.7; // nearby
+                }
+            } else {
+                locationScore = 1.0; // No preference -> default to match
+            }
+
+            // 3. Interest Score
+            double interestScore = 0.2;
+            if (!preferredCourse.isEmpty()) {
+                String prefCourseLower = preferredCourse.toLowerCase();
+                String actBranchLower = branchName != null ? branchName.toLowerCase() : "";
+                String actCodeLower = branchCode != null ? branchCode.toLowerCase() : "";
+
+                if (actBranchLower.equals(prefCourseLower) || actCodeLower.equals(prefCourseLower)) {
+                    interestScore = 1.0; // exactMatch
+                } else if (matchesCourseAlias(prefCourseLower, actBranchLower) || actBranchLower.contains(prefCourseLower) || actCodeLower.contains(prefCourseLower)) {
+                    interestScore = 0.7; // related
+                }
+            } else {
+                interestScore = 1.0; // no preference
+            }
+
+            // 4. Hostel Score
+            double hostelScore;
+            if (hostelRequired) {
+                hostelScore = 1.0; // Assuming available (as requested: hostelRequired && available)
+            } else {
+                hostelScore = 0.5;
+            }
+
+            // 5. Category Score
+            // if (studentCategory == collegeCategory) categoryScore = 1; else categoryScore = 0.6;
+            double categoryScore = 1.0; // In this system, we only fetch for the student's category
+
+            // 6. Preference Boost
+            double prefScore = isPreferred ? 1.0 : 0.0;
+
+            // 🧮 FINAL SCORE FORMULA
+            double finalScore = (0.4 * cutoffScore) +
+                                (0.2 * locationScore) +
+                                (0.15 * interestScore) +
+                                (0.1 * hostelScore) +
+                                (0.1 * categoryScore) +
+                                (0.05 * prefScore);
+
+            // 🎯 STEP 4: FILTER TARGET COLLEGES (0.55 to 0.85)
+            if (finalScore >= 0.55 && finalScore <= 0.85) {
+                double probability = finalScore * 100.0;
+                
+                String label;
+                if (probability >= 80) label = "Strong";
+                else if (probability >= 65) label = "Moderate";
+                else label = "Dream";
+
+                targetColleges.add(com.pathwise.backend.dto.FinalReportResponse.TargetCollegeResponse.builder()
+                        .collegeName(collegeName)
+                        .course(branchName)
+                        .scorePercentage(Math.round(probability * 100.0) / 100.0)
+                        .district(district)
+                        .chanceLabel(label)
+                        .cutoffScore(Math.round(cutoffScore * 100.0) / 100.0)
+                        .locationScore(Math.round(locationScore * 100.0) / 100.0)
+                        .interestScore(Math.round(interestScore * 100.0) / 100.0)
+                        .hostelScore(Math.round(hostelScore * 100.0) / 100.0)
+                        .categoryScore(Math.round(categoryScore * 100.0) / 100.0)
+                        .preferenceBonus(Math.round(prefScore * 100.0) / 100.0)
+                        .build());
+            }
+        }
+
+        // Sort safeColleges by probability descending and limit to 5
+        safeColleges.sort(Comparator.comparing(com.pathwise.backend.dto.FinalReportResponse.SafeCollegeResponse::getProbability).reversed());
+        List<com.pathwise.backend.dto.FinalReportResponse.SafeCollegeResponse> finalSafeColleges = safeColleges.stream().limit(5).collect(Collectors.toList());
+
+        // Sort targetColleges by finalScore descending and limit to 15
+        targetColleges.sort(Comparator.comparing(com.pathwise.backend.dto.FinalReportResponse.TargetCollegeResponse::getScorePercentage).reversed());
+        List<com.pathwise.backend.dto.FinalReportResponse.TargetCollegeResponse> finalTargetColleges = targetColleges.stream().limit(15).collect(Collectors.toList());
+
+        return com.pathwise.backend.dto.FinalReportResponse.builder()
+                .studentName(request.getStudent_name() != null ? request.getStudent_name() : "Student")
+                .studentCutoff(studentCutoff)
+                .studentCategory(request.getCategory() != null ? request.getCategory().toUpperCase() : "")
+                .preferredCourse(preferredCourse)
+                .preferredLocation(preferredDistrict)
+                .hostelRequired(hostelRequired)
+                .safeColleges(finalSafeColleges)
+                .targetColleges(finalTargetColleges)
+                .build();
+    }
+
+    // ========================================================================
     // ⭐ PREFERRED COLLEGES: Simple Probability Formula
     // probability = (student_cutoff / college_cutoff) × 100
     // Then tiered into realistic ranges
