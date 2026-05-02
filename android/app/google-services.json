@@ -14,6 +14,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "507210518116-bhnb8378de8v9p4u1051a21i05jefndo.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kanitzatech.nextep",
+            "certificate_hash": "5ab7d7251c2beced6322eb11c4ea6beed11d9575"
+          }
+        },
+        {
           "client_id": "507210518116-i14mr6fg30efs8f4tl9qi276rqgc8l23.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
@@ -21,43 +29,6 @@
             "certificate_hash": "9c5debf7b2c7a6d399a59afa054977d6fe442116"
           }
         },
-        {
-          "client_id": "507210518116-iuvc4daa1pghrdb1r5nt9jl1e1fl6b6t.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.kanitzatech.nextep",
-            "certificate_hash": "80968d52445006804f8d43f9ee93218a7bb85ff7"
-          }
-        },
-        {
-          "client_id": "507210518116-9jts4eob3rg9blskudv9hekt5e76fcm4.apps.googleusercontent.com",
-          "client_type": 3
-        }
-      ],
-      "api_key": [
-        {
-          "current_key": "AIzaSyABuehuvSKFwYztry0jL0oUXZuHbcF98fc"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": [
-            {
-              "client_id": "507210518116-9jts4eob3rg9blskudv9hekt5e76fcm4.apps.googleusercontent.com",
-              "client_type": 3
-            }
-          ]
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:507210518116:android:fff6766089cce0e77cd971",
-        "android_client_info": {
-          "package_name": "com.nextep"
-        }
-      },
-      "oauth_client": [
         {
           "client_id": "507210518116-9jts4eob3rg9blskudv9hekt5e76fcm4.apps.googleusercontent.com",
           "client_type": 3
