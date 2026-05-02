@@ -54,9 +54,11 @@ class _FinalReportPageState extends State<FinalReportPage> {
   /// Returns the target colleges to display:
   /// Prefers backend data; falls back to client-side computed list.
   List<TargetCollegeResponse> get _effectiveTargetColleges {
-    final backendList = _finalReportResponse?.targetColleges ?? [];
-    if (backendList.isNotEmpty) return backendList;
-    return _clientSideTargetColleges;
+      final backendList = _finalReportResponse?.targetColleges ?? [];
+      if (backendList.isNotEmpty) {
+        return backendList;
+      }
+      return _clientSideTargetColleges;
   }
 
   Future<void> _loadFinalReport() async {

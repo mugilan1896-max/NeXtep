@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -6,7 +5,6 @@ import 'package:flutter/rendering.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:guidex/models/final_report_response.dart';
 
 class ReportExportService {
@@ -130,7 +128,7 @@ class ReportExportService {
                       ),
                     ),
                     pw.Column(
-                      crossAxisAlignment: pw.MainAxisAlignment.end,
+                      crossAxisAlignment: pw.CrossAxisAlignment.end,
                       children: [
                         pw.Text('${college.scorePercentage}%', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
                         pw.Text(college.chanceLabel, style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
