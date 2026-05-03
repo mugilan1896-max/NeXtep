@@ -167,9 +167,9 @@ class ReportExportService {
       ),
     );
 
-    await Printing.sharePdf(
-        bytes: await pdf.save(),
-        filename: '${studentName}_NeXtep_Report.pdf');
+    await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async => pdf.save(),
+        name: '${studentName}_NeXtep_Report.pdf');
   }
 
   static pw.Widget _buildSectionTitle(String title, PdfColor color) {

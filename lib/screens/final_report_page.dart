@@ -367,7 +367,7 @@ class _FinalReportPageState extends State<FinalReportPage> {
                       const SizedBox(height: 24),
 
                       // Download Section
-                      _buildDownloadSection(),
+                      // (Moved into Target Colleges Section)
                       const SizedBox(height: 32),
                     ],
                   ),
@@ -377,71 +377,6 @@ class _FinalReportPageState extends State<FinalReportPage> {
     );
   }
 
-  Widget _buildDownloadSection() {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.download, color: Color(0xFF4F46E5)),
-              SizedBox(width: 12),
-              Text(
-                'Download Your Report',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF111827),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Save your personalized recommendation report for future reference.',
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _downloadAsPDF,
-                  icon: const Icon(Icons.picture_as_pdf),
-                  label: const Text('PDF Report'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4F46E5),
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _downloadAsPNG,
-                  icon: const Icon(Icons.image),
-                  label: const Text('PNG Image'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF4F46E5),
-                    side: const BorderSide(color: Color(0xFF4F46E5)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildStudentHeader() {
     return Container(
@@ -887,6 +822,29 @@ class _FinalReportPageState extends State<FinalReportPage> {
               return _buildTargetCollegeCard(college, index + 1);
             }).toList(),
           ),
+        const SizedBox(height: 32),
+        Center(
+          child: SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: ElevatedButton.icon(
+              onPressed: _downloadAsPDF,
+              icon: const Icon(Icons.download, size: 20),
+              label: const Text(
+                'Download Analysis Report (PDF)',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4F46E5),
+                foregroundColor: Colors.white,
+                elevation: 4,
+                shadowColor: const Color(0xFF4F46E5).withValues(alpha: 0.3),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 40),
       ],
     );
   }
