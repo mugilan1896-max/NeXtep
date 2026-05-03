@@ -147,19 +147,19 @@ class ReportExportService {
             // Sections for Dream, Target, Safe
             if (dreamColleges.isNotEmpty) ...[
               _buildTypeHeader('Dream Colleges', 'Ambitious choices with lower probability', PdfColors.red),
-              _buildCollegeList(dreamColleges),
+              ..._buildCollegeList(dreamColleges),
               pw.SizedBox(height: 24),
             ],
 
             if (targetColleges.isNotEmpty) ...[
               _buildTypeHeader('Target Colleges', 'Strong probability of admission', PdfColors.orange),
-              _buildCollegeList(targetColleges),
+              ..._buildCollegeList(targetColleges),
               pw.SizedBox(height: 24),
             ],
 
             if (safeColleges.isNotEmpty) ...[
               _buildTypeHeader('Safe Colleges', 'High probability based on history', PdfColors.green),
-              _buildCollegeList(safeColleges),
+              ..._buildCollegeList(safeColleges),
               pw.SizedBox(height: 24),
             ],
           ];
