@@ -17,7 +17,7 @@ class ReportExportService {
     required String preferredCourse,
     required List<dynamic> safeColleges,
     required List<TargetCollegeResponse> targetColleges,
-    required List<dynamic> dreamColleges,
+    required List<TargetCollegeResponse> preferredColleges,
   }) async {
     final pdf = pw.Document();
 
@@ -135,7 +135,7 @@ class ReportExportService {
               ),
               child: pw.Row(
                 children: [
-                  pw.Text('${targetColleges.length + safeColleges.length + dreamColleges.length}',
+                  pw.Text('${targetColleges.length + safeColleges.length + preferredColleges.length}',
                       style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColor.fromHex('#1A73E8'))),
                   pw.SizedBox(width: 10),
                   pw.Text('Total Matching Colleges', style: const pw.TextStyle(fontSize: 14)),
@@ -144,10 +144,10 @@ class ReportExportService {
             ),
             pw.SizedBox(height: 24),
 
-            // Sections for Dream, Target, Safe
-            if (dreamColleges.isNotEmpty) ...[
-              _buildTypeHeader('Dream Colleges', 'Ambitious choices with lower probability', PdfColors.red),
-              ..._buildCollegeList(dreamColleges),
+            // Sections for Preferred, Target, Safe
+            if (preferredColleges.isNotEmpty) ...[
+              _buildTypeHeader('Preferred Choices', 'Your selected top 5 matches', PdfColors.blue700),
+              ..._buildCollegeList(preferredColleges),
               pw.SizedBox(height: 24),
             ],
 

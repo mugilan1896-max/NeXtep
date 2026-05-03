@@ -53,19 +53,27 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
   /// Returns the target colleges to display:
   /// Prefers backend data; falls back to client-side computed list.
-  /// Returns the target colleges (75-90% probability)
-  List<TargetCollegeResponse> get _targetColleges {
-      final backendList = _finalReportResponse?.targetColleges ?? [];
-      if (backendList.isNotEmpty) {
-        return backendList;
-      }
-      return _clientSideTargetColleges.where((c) => c.scorePercentage >= 60 && c.scorePercentage < 95).toList();
+  /// Returns exactly 5 preferred colleges (user selections + next best matches)
+  List<TargetCollegeResponse> get _preferredColleges {
+      final preferred = _clientSideTargetColleges.where((c) => c.preferenceBonus > 0).toList();
+      if (preferred.length >= 5) return preferred.take(5).toList();
+      
+      // If fewer than 5 preferred, fill with the next best overall colleges not already included
+      final others = _clientSideTargetColleges.where((c) => c.preferenceBonus == 0).toList();
+      return [...preferred, ...others].take(5).toList();
   }
 
-  /// Returns the dream colleges (< 75% probability)
-  List<TargetCollegeResponse> get _dreamColleges {
-      return _clientSideTargetColleges.where((c) => c.scorePercentage < 60).toList();
+  /// Returns the next 15 target colleges (not in preferred)
+  List<TargetCollegeResponse> get _targetColleges {
+      final preferred = _preferredColleges;
+      return _clientSideTargetColleges
+          .where((c) => !preferred.any((p) => p.collegeName == c.collegeName && p.course == c.course))
+          .take(15)
+          .toList();
   }
+
+  /// Returns empty as we now use _preferredColleges and _targetColleges
+  List<TargetCollegeResponse> get _dreamColleges => [];
 
   /// Returns the safe colleges (> 90% probability)
   List<TargetCollegeResponse> get _safeColleges {
@@ -116,12 +124,12 @@ class _FinalReportPageState extends State<FinalReportPage> {
   Future<void> _downloadAsPDF() async {
     await ReportExportService.exportToPDF(
       studentName: widget.studentName,
-      studentCutoff: widget.studentCutoff,
       category: widget.category,
+      studentCutoff: widget.studentCutoff,
       preferredCourse: widget.preferredCourse,
-      safeColleges: _safeColleges.isEmpty ? _preferredCollegesForDisplay : _safeColleges,
+      safeColleges: [], // Integrated into target/preferred lists
       targetColleges: _targetColleges,
-      dreamColleges: _dreamColleges,
+      preferredColleges: _preferredColleges,
     );
   }
 
@@ -258,9 +266,9 @@ class _FinalReportPageState extends State<FinalReportPage> {
         }
       }
 
-      // Sort DESC by finalScore, take top 15
+      // Sort DESC by finalScore, return all for splitting in getters
       scored.sort((a, b) => b.finalScore.compareTo(a.finalScore));
-      return scored.take(15).map((s) => s.response).toList();
+      return scored.map((s) => s.response).toList();
     } catch (e) {
       debugPrint('Client-side target college computation failed: $e');
       return [];
@@ -852,16 +860,16 @@ class _FinalReportPageState extends State<FinalReportPage> {
 
   Widget _buildTargetCollegesSection() {
     final colleges = _targetColleges;
-    final dreamColleges = _dreamColleges;
+    final preferred = _preferredColleges;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Dream Colleges Header (UI)
-        if (dreamColleges.isNotEmpty) ...[
-          _buildCategoryHeader('Dream Colleges', 'Ambitious (Chance < 75%)', Colors.red.shade600),
+        // Preferred Colleges Header (UI)
+        if (preferred.isNotEmpty) ...[
+          _buildCategoryHeader('Preferred Choices', 'Your selected top 5 matches', Colors.blue.shade600),
           const SizedBox(height: 12),
-          ...dreamColleges.asMap().entries.map((entry) => _buildTargetCollegeCard(entry.value, entry.key + 1)),
+          ...preferred.asMap().entries.map((entry) => _buildTargetCollegeCard(entry.value, entry.key + 1)),
           const SizedBox(height: 24),
         ],
 
