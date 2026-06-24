@@ -16,7 +16,7 @@ class ApiService {
     // Default endpoint for college-backend-prod Cloud Run service.
     defaultValue: 'https://pathwise-backend-t3mkeqs5ga-el.a.run.app',
   );
-
+ 
   static const String _realDeviceHost =
       String.fromEnvironment('LOCAL_API_HOST', defaultValue: '192.168.1.100');
 

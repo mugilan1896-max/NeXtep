@@ -26,7 +26,6 @@ Future<void> main() async {
     }
   } catch (e) {
     debugPrint('Firebase initialization failed or timed out: $e');
-    // Continue to onboarding even if Firebase initialization fails.
   }
 
   runApp(const MyApp());
